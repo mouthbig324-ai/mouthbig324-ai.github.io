@@ -1,0 +1,36 @@
+---
+import MainGridLayout from "../../layouts/MainGridLayout.astro";
+import JournalHeader from "../../components/JournalHeader.astro";
+import { getAlbums, mediaUrl } from "../../utils/album-utils";
+import { url } from "../../utils/url-utils";
+export function getStaticPaths() { return getAlbums().map(album => ({ params: { slug: album.slug }, props: { album } })); }
+const { album } = Astro.props;
+---
+<MainGridLayout title={album.title} description={album.description}>
+  <JournalHeader title={album.title} description={album.description} eyebrow={`${album.date} · ${album.photos.length} 张照片`} />
+  <div class="card-base p-4 md:p-6 mb-4">
+    <div class="album-gallery grid grid-cols-2 md:grid-cols-3 gap-3">
+      {album.photos.map(photo => <a class="block rounded-xl overflow-hidden" href={mediaUrl(photo.src)} data-pswp-width={photo.width} data-pswp-height={photo.height} target="_blank" rel="noopener" aria-label={photo.alt || "放大查看照片"}>
+        <img class="w-full aspect-square object-cover hover:scale-105 transition" src={mediaUrl(photo.thumbnail || photo.src)} width={photo.width} height={photo.height} alt={photo.alt || album.title} loading="lazy" decoding="async" />
+      </a>)}
+    </div>
+  </div>
+  <a class="btn-regular rounded-xl px-5 py-3 inline-flex" href={url("/albums/")}>← 返回相册</a>
+</MainGridLayout>
+<script>
+  import PhotoSwipeLightbox from "photoswipe/lightbox";
+  import "photoswipe/style.css";
+  let lightbox: PhotoSwipeLightbox | undefined;
+  const mount = () => {
+    lightbox?.destroy();
+    lightbox = new PhotoSwipeLightbox({ gallery: ".album-gallery", children: "a", pswpModule: () => import("photoswipe"), bgOpacity: 0.94 });
+    lightbox.init();
+  };
+  const setup = () => {
+    mount();
+    window.swup.hooks.on("page:view", mount);
+    window.swup.hooks.on("content:replace", () => lightbox?.destroy(), { before: true });
+  };
+  if (window.swup) setup();
+  else document.addEventListener("swup:enable", setup, { once: true });
+</script>

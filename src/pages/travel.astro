@@ -1,0 +1,15 @@
+---
+import MainGridLayout from "../layouts/MainGridLayout.astro";
+import JournalHeader from "../components/JournalHeader.astro";
+import PostCard from "../components/PostCard.astro";
+import { getSortedPosts } from "../utils/content-utils";
+import { getPostUrlBySlug } from "../utils/url-utils";
+const posts = (await getSortedPosts()).filter(post => post.data.category === "旅行日记");
+---
+<MainGridLayout title="旅行日记" description="用照片与文字，记下沿途的风景。">
+  <JournalHeader title="旅行日记" description="走过的路、看过的风景，都在这里留一页。" />
+  <div class="flex flex-col gap-4">
+    {posts.map(entry => <PostCard entry={entry} {...entry.data} url={getPostUrlBySlug(entry.slug)} style="" />)}
+    {posts.length === 0 && <div class="card-base px-6 md:px-9 py-14 text-center"><p class="text-90 text-xl font-medium mb-3">下一站，慢慢记录。</p><p class="text-50">第一篇旅行日记，还在路上。</p></div>}
+  </div>
+</MainGridLayout>

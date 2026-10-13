@@ -1,0 +1,17 @@
+---
+import MainGridLayout from "../../layouts/MainGridLayout.astro";
+import JournalHeader from "../../components/JournalHeader.astro";
+import { getAlbums, mediaUrl } from "../../utils/album-utils";
+import { url } from "../../utils/url-utils";
+const albums = getAlbums();
+---
+<MainGridLayout title="相册" description="把喜欢的瞬间，收进一本本相册。">
+  <JournalHeader title="相册" description="有些瞬间，照片比文字记得更清楚。" />
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    {albums.map(album => <a class="card-base group block" href={url(`/albums/${album.slug}/`)}>
+      {album.photos[0] && <img class="w-full aspect-[4/3] object-cover transition group-hover:scale-[1.02]" loading="lazy" decoding="async" src={mediaUrl(album.photos[0].thumbnail || album.photos[0].src)} alt={album.photos[0].alt || album.title} width="640" height="480" />}
+      <div class="p-6"><p class="text-sm text-50 mb-2">{album.date} · {album.photos.length} 张照片</p><h2 class="text-90 text-2xl font-bold mb-2">{album.title}</h2><p class="text-75">{album.description}</p></div>
+    </a>)}
+  </div>
+  {albums.length === 0 && <div class="card-base px-6 md:px-9 py-16 text-center"><div class="text-5xl mb-6" aria-hidden="true">◒</div><h2 class="text-90 text-xl font-medium mb-3">给风景留一个位置。</h2><p class="text-50">第一本相册，等待装进值得记住的瞬间。</p></div>}
+</MainGridLayout>
