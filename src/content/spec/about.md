@@ -10,4 +10,4 @@
 
 ---
 
-这个小站使用 [Fuwari](https://github.com/saicaca/fuwari) 主题，顶部暂用主题自带的装饰图片。
+这个小站使用 [Fuwari](https://github.com/saicaca/fuwari) 主题。

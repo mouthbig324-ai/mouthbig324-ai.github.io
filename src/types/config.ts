@@ -23,7 +23,7 @@ export type SiteConfig = {
 	banner: {
 		enable: boolean;
 		src: string;
-		position?: "top" | "center" | "bottom";
+		position?: "top" | "center" | "bottom" | `${number}% ${number}%`;
 		credit: {
 			enable: boolean;
 			text: string;
