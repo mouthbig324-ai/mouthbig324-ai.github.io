@@ -15,8 +15,33 @@ const { path } = Astro.props;
   </form>
 </section>}
 <style>
-  input, textarea { padding: .8rem 1rem; border-radius: .7rem; color: inherit; background: var(--page-bg); outline: none; border: 1px solid transparent; }
-  input:focus, textarea:focus { border-color: var(--primary); }
+  .comments {
+    --comment-field-text: oklch(0.24 0.015 var(--hue));
+    --comment-field-placeholder: oklch(0.44 0.015 var(--hue));
+    color-scheme: light;
+  }
+  :global(.dark) .comments {
+    --comment-field-text: oklch(0.94 0.008 var(--hue));
+    --comment-field-placeholder: oklch(0.72 0.01 var(--hue));
+    color-scheme: dark;
+  }
+  input, textarea {
+    padding: .8rem 1rem;
+    border-radius: .7rem;
+    color: var(--comment-field-text);
+    background: var(--page-bg);
+    border: 1px solid var(--line-color);
+    caret-color: var(--primary);
+  }
+  input::placeholder, textarea::placeholder {
+    color: var(--comment-field-placeholder);
+    opacity: 1;
+  }
+  input:focus, textarea:focus {
+    border-color: var(--primary);
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
   .comment-honeypot { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 </style>
 <script>

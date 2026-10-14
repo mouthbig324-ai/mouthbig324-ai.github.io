@@ -3,4 +3,14 @@ import MainGridLayout from "../layouts/MainGridLayout.astro";
 import JournalHeader from "../components/JournalHeader.astro";
 import friends from "../data/friends.json";
 ---
-<MainGridLayout title="友情链接" description="去拜访朋友们的小站。"><JournalHeader title="朋友的小站" description="在网络的角落，和朋友们互相串门。" /><div class="grid grid-cols-1 md:grid-cols-2 gap-4">{friends.map(friend => <a class="card-base p-7 group" href={friend.url} target="_blank" rel="noopener"><p class="text-90 text-xl font-bold group-hover:text-[var(--primary)] mb-3">{friend.name} ↗</p><p class="text-75">{friend.description}</p><p class="text-50 text-xs mt-4">{new URL(friend.url).hostname}</p></a>)}</div></MainGridLayout>
+<MainGridLayout title="友情链接" description="去拜访朋友们的小站。">
+	<JournalHeader title="朋友的小站" description="在网络的角落，和朋友们互相串门。" />
+	<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+		{friends.map(friend => <a class="card-base p-7 group" href={friend.url} target="_blank" rel="noopener">
+			<p class="text-90 text-xl font-bold group-hover:text-[var(--primary)] mb-3">{friend.name} ↗</p>
+			<p class="text-75">{friend.description}</p>
+			{friend.note && <p class="mt-4 border-l-2 border-[var(--primary)] pl-3 text-75 text-sm"><span class="text-[var(--primary)] font-semibold">嘴哥备注 · </span>{friend.note}</p>}
+			<p class="text-50 text-xs mt-4">{new URL(friend.url).hostname}</p>
+		</a>)}
+	</div>
+</MainGridLayout>

@@ -1,7 +1,7 @@
 import MarkdownIt from "markdown-it";
 type Photo = { src: string; thumbnail?: string; alt: string; width: number; height: number };
 type Video = { src: string; caption: string };
-type Friend = { name: string; url: string; description: string };
+type Friend = { name: string; url: string; description: string; note?: string };
 const parser = new MarkdownIt({ html: false, linkify: true, breaks: true });
 const api = document.body.dataset.editorApi || "";
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -139,9 +139,32 @@ $("preview-toggle").addEventListener("click", () => {
 async function loadFriends() { try { const data = await request("/admin/record?kind=friends&id=friends"); friendItems = data.meta; friendSha = data.sha; renderFriends(); } catch (error) { status("friends-status", message(error), true); } }
 function renderFriends() {
   const list = $("friend-list"); list.replaceChildren();
-  friendItems.forEach((friend, index) => { const row = document.createElement("div"); row.className = "friend-row"; for (const [field, placeholder] of [["name", "网站名称"], ["url", "https://…"], ["description", "简短介绍"]] as [keyof Friend, string][]) { const input = document.createElement("input"); input.placeholder = placeholder; input.value = friend[field]; input.addEventListener("input", () => { friend[field] = input.value; }); row.append(input); } const remove = document.createElement("button"); remove.textContent = "移除"; remove.addEventListener("click", () => { friendItems.splice(index, 1); renderFriends(); }); row.append(remove); list.append(row); });
+  friendItems.forEach((friend, index) => {
+    const row = document.createElement("div"); row.className = "friend-row";
+    const heading = document.createElement("div"); heading.className = "friend-row-heading";
+    const title = document.createElement("strong"); title.textContent = friend.name || `友链 ${index + 1}`;
+    const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "移除友链";
+    remove.addEventListener("click", () => { friendItems.splice(index, 1); renderFriends(); });
+    heading.append(title, remove); row.append(heading);
+    for (const [field, label, placeholder, maximum] of [
+      ["name", "网站名称", "例如 Clairis", 80],
+      ["url", "网站地址", "https://example.com/", 2000],
+      ["description", "网站简介", "这里主要分享什么内容？", 250],
+      ["note", "嘴哥备注（公开显示）", "例如：认识的朋友，或者想记住的一句话", 250],
+    ] as [keyof Friend, string, string, number][]) {
+      const wrapper = document.createElement("label"); wrapper.className = `friend-field friend-field-${field}`;
+      const caption = document.createElement("span"); caption.textContent = label;
+      const control = field === "note" || field === "description" ? document.createElement("textarea") : document.createElement("input");
+      if (control instanceof HTMLTextAreaElement) control.rows = 2;
+      if (control instanceof HTMLInputElement && field === "url") control.type = "url";
+      control.placeholder = placeholder; control.value = friend[field] || ""; control.maxLength = maximum;
+      control.addEventListener("input", () => { friend[field] = control.value; if (field === "name") title.textContent = control.value || `友链 ${index + 1}`; });
+      wrapper.append(caption, control); row.append(wrapper);
+    }
+    list.append(row);
+  });
 }
-$("add-friend").addEventListener("click", () => { friendItems.push({ name: "", url: "", description: "" }); renderFriends(); });
+$("add-friend").addEventListener("click", () => { friendItems.push({ name: "", url: "", description: "", note: "" }); renderFriends(); });
 $("save-friends").addEventListener("click", async () => { status("friends-status", "正在保存…"); try { const result = await send("/admin/record", { kind: "friends", id: "friends", sha: friendSha, items: friendItems }); friendSha = result.sha; status("friends-status", "友链已保存，网站正在更新。"); } catch (error) { status("friends-status", message(error), true); } });
 async function loadComments() {
   const list = $("admin-comment-list"); list.textContent = "正在加载留言…";

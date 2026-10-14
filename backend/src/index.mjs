@@ -101,7 +101,7 @@ async function saveRecord(env, data) {
   else if (kind === "album") raw = JSON.stringify({ title: text(data.title, 160, "相册名称", true), date: date(data.date), description: text(data.description || "", 2000, "相册简介"), draft: data.draft === true, photos: photos(data.photos || []) }, null, 2) + "\n";
   else {
     if (!Array.isArray(data.items) || data.items.length > 100) fail(400, "友链格式不正确。");
-    raw = JSON.stringify(data.items.map(friend => ({ name: text(friend.name, 80, "网站名称", true), url: httpsUrl(text(friend.url, 2000, "网站地址", true)), description: text(friend.description || "", 250, "简介") })), null, 2) + "\n";
+    raw = JSON.stringify(data.items.map(friend => ({ name: text(friend.name, 80, "网站名称", true), url: httpsUrl(text(friend.url, 2000, "网站地址", true)), description: text(friend.description || "", 250, "简介"), note: text(friend.note || "", 250, "备注") })), null, 2) + "\n";
   }
   const existing = await github(env, contentRoute(path) + "?ref=main", "GET", undefined, true);
   if ((existing?.sha || "") !== (data.sha || "")) fail(409, "这条记录已经变化，请重新打开后再保存，避免覆盖内容。");

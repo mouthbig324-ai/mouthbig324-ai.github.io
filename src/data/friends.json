@@ -2,11 +2,13 @@
   {
     "name": "Clairis",
     "url": "https://clairis.cn/",
-    "description": "学习笔记、旅行随笔和生活记录"
+    "description": "学习笔记、旅行随笔和生活记录",
+    "note": ""
   },
   {
     "name": "Serral828",
     "url": "https://serral828.github.io/",
-    "description": "记录技术与生活。"
+    "description": "记录技术与生活。",
+    "note": ""
   }
 ]

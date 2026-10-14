@@ -128,7 +128,10 @@ test("publishing, albums and friend links use only their permitted repository pa
   assert.equal(published.url, origin + "/posts/test-travel/"); assert.equal(parsePost(files.get("src/content/posts/test-travel.md").raw).meta.featured, true);
   assert.equal((await call("/admin/record", { auth: true, data: { kind: "album", id: "autumn", sha: "", title: "秋日", date: "2026-10-14", photos: [], draft: true } })).status, 200);
   assert.equal((await call("/admin/record", { auth: true, data: { kind: "friends", sha: "original-friends", items: [{ name: "test", url: "/invalid-local-url", description: "" }] } })).status, 400);
-  assert.equal((await call("/admin/record", { auth: true, data: { kind: "friends", sha: "original-friends", items: [{ name: "Clairis", url: "https://clairis.cn/", description: "朋友的小站" }] } })).status, 200);
+  assert.equal((await call("/admin/record", { auth: true, data: { kind: "friends", sha: "original-friends", items: [{ name: "Clairis", url: "https://clairis.cn/", description: "朋友的小站", note: "以后一起旅行" }] } })).status, 200);
+  assert.equal(JSON.parse(files.get("src/data/friends.json").raw)[0].note, "以后一起旅行");
+  const friendSha = files.get("src/data/friends.json").sha;
+  assert.equal((await call("/admin/record", { auth: true, data: { kind: "friends", sha: friendSha, items: [{ name: "Clairis", url: "https://clairis.cn/", description: "朋友的小站", note: "备注".repeat(126) }] } })).status, 400);
   assert.ok(writes.every(item => /^src\/(content\/posts\/[a-z0-9-]+\.md|data\/albums\/[a-z0-9-]+\.json|data\/friends\.json)$/.test(item.path)));
 });
 test("uploaded media supports full downloads, ranges, HEAD and ETag validation", async () => {
