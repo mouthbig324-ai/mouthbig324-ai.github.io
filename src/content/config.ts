@@ -11,6 +11,15 @@ const postsCollection = defineCollection({
 		tags: z.array(z.string()).optional().default([]),
 		category: z.string().optional().nullable().default(""),
 		lang: z.string().optional().default(""),
+		featured: z.boolean().optional().default(false),
+		photos: z.array(z.object({
+			src: z.string(),
+			thumbnail: z.string().optional(),
+			alt: z.string().optional().default(""),
+			width: z.number().positive(),
+			height: z.number().positive(),
+		})).optional().default([]),
+		videos: z.array(z.object({ src: z.string(), caption: z.string().optional().default("") })).optional().default([]),
 
 		/* For internal use */
 		prevTitle: z.string().default(""),

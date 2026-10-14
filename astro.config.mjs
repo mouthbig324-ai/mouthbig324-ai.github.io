@@ -100,7 +100,7 @@ export default defineConfig({
 			}
 		}),
         svelte(),
-		sitemap(),
+		sitemap({ filter: page => !page.endsWith("/admin/") }),
 	],
 	markdown: {
 		remarkPlugins: [

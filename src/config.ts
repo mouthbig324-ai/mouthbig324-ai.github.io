@@ -45,6 +45,7 @@ export const navBarConfig: NavBarConfig = {
 		{ name: "旅行日记", url: "/travel/" },
 		{ name: "生活碎片", url: "/moments/" },
 		{ name: "相册", url: "/albums/" },
+		{ name: "友链", url: "/friends/" },
 		LinkPreset.About,
 	],
 };

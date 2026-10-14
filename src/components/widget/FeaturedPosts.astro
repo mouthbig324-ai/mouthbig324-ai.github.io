@@ -1,0 +1,6 @@
+---
+import { getSortedPosts } from "../../utils/content-utils";
+import { getPostUrlBySlug } from "../../utils/url-utils";
+const posts = (await getSortedPosts()).filter(post => post.data.featured).slice(0, 5);
+---
+{posts.length > 0 && <section class="card-base p-5"><h2 class="text-90 font-bold mb-4">精选记录</h2><div class="flex flex-col gap-4">{posts.map(post => <a class="group" href={getPostUrlBySlug(post.slug)}><p class="text-75 group-hover:text-[var(--primary)] font-medium">{post.data.title}</p><time class="text-50 text-xs">{post.data.published.toISOString().slice(0, 10)}</time></a>)}</div></section>}

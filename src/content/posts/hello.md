@@ -6,6 +6,7 @@ image: ''
 tags: [日常]
 category: 生活碎片
 draft: false
+featured: true
 ---
 
 给自己留一块地方，放照片、写旅行日记，也记录生活里的小事。
