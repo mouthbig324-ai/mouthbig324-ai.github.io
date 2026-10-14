@@ -10,7 +10,7 @@ const value = (id: string) => ($<HTMLInputElement | HTMLTextAreaElement>(id)).va
 const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date());
 let token = sessionStorage.getItem("zuige-admin-session") || "";
 let mode = "post"; let id = ""; let sha = ""; let cover = ""; let photoItems: Photo[] = []; let videoItems: Video[] = [];
-let friendItems: Friend[] = []; let friendSha = ""; let busy = false;
+let friendItems: Friend[] = []; let friendSha = ""; let busy = false; let storageReady = false;
 function status(target: string, message: string, error = false) { const element = $(target); element.replaceChildren(); element.textContent = message; element.classList.toggle("error", error); }
 async function request(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers); if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -22,7 +22,10 @@ const send = (path: string, data: unknown) => request(path, { method: "POST", he
 function showLogin() { $("login-panel").hidden = false; $("editor-panel").hidden = true; $("logout").hidden = true; }
 async function showEditor() {
   const state = await request("/admin/status");
+  storageReady = state.storage === true;
   $("storage-status").textContent = state.storage ? `照片存储：${(state.usedBytes / 1e9).toFixed(2)} / ${(state.maxBytes / 1e9).toFixed(0)} GB` : "照片存储尚未连接";
+  $("choose-media").classList.toggle("unavailable", !storageReady);
+  $("choose-media").setAttribute("aria-disabled", String(!storageReady));
   $("login-panel").hidden = true; $("editor-panel").hidden = false; $("logout").hidden = false;
   await selectMode("post");
 }
@@ -44,6 +47,7 @@ async function selectMode(next: string) {
   for (const element of document.querySelectorAll<HTMLElement>(".post-only")) element.hidden = mode === "album";
   $("title-label").textContent = mode === "album" ? "相册名称" : "标题"; $("description-label").textContent = mode === "album" ? "相册简介" : "简短介绍";
   $("new-record").textContent = mode === "album" ? "＋ 新建相册" : "＋ 新建记录";
+  $("media-note").textContent = storageReady ? "照片自动压缩，不改动设备上的原件。视频每个最多64 MB。" : mode === "album" ? "云存储尚未开通，暂时不能上传照片。" : "附件上传尚未开通。可以先写文字，或添加已有的视频直链。";
   reset(); await loadRecords();
   } finally { busy = false; setBusy(false); }
 }
@@ -108,7 +112,7 @@ input("media-files").addEventListener("change", async () => {
   finally { busy = false; setBusy(false); input("media-files").value = ""; }
 });
 $("add-video").addEventListener("click", () => { const src = value("video-url").trim(); if (!/^https:\/\/[^\s]+$/.test(src)) return status("upload-status", "请填写有效的 HTTPS 视频链接。", true); videoItems.push({ src, caption: "" }); input("video-url").value = ""; renderMedia(); });
-function setBusy(state: boolean) { for (const control of document.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLTextAreaElement | HTMLSelectElement>("#editor-panel button, #editor-panel input, #editor-panel textarea, #editor-panel select")) control.disabled = state; }
+function setBusy(state: boolean) { for (const control of document.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLTextAreaElement | HTMLSelectElement>("#editor-panel button, #editor-panel input, #editor-panel textarea, #editor-panel select")) control.disabled = state; input("media-files").disabled = state || !storageReady; }
 async function save(draft: boolean) {
   if (busy || !$<HTMLFormElement>("record-form").reportValidity()) return; busy = true; setBusy(true); status("save-status", "正在保存…");
   try {
