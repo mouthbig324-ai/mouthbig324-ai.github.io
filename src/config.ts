@@ -29,7 +29,7 @@ export const siteConfig: SiteConfig = {
 		enable: true, // Display the table of contents on the right side of the post
 		depth: 2, // Maximum heading depth to show in the table, from 1 to 3
 	},
-	favicon: [{ src: "/avatar.svg", sizes: "any" },
+	favicon: [{ src: "/favicon-graffiti.png", sizes: "128x128" },
 		// Leave this array empty to use the default favicon
 		// {
 		//   src: '/favicon/icon.png',    // Path of the favicon, relative to the /public directory
@@ -50,7 +50,7 @@ export const navBarConfig: NavBarConfig = {
 };
 
 export const profileConfig: ProfileConfig = {
-	avatar: "/avatar.svg",
+	avatar: "assets/images/graffiti-avatar.png",
 	name: "嘴哥",
 	bio: "把走过的路、看过的风景，和日常的小事，慢慢记下来。",
 	links: [
