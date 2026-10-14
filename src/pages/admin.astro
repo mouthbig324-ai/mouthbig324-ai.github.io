@@ -3,11 +3,11 @@ import { apiBase } from "../utils/services";
 import { url } from "../utils/url-utils";
 ---
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex,nofollow" /><title>嘴哥 · 记录管理</title><link rel="icon" href={url("/favicon-graffiti.png")} /></head>
+<html lang="zh-CN"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><meta name="robots" content="noindex,nofollow" /><meta name="referrer" content="no-referrer" /><title>嘴哥 · 记录管理</title><link rel="icon" href={url("/favicon-graffiti.png")} /></head>
 <body data-editor-api={apiBase}>
-  <header><a href={url("/")} data-no-swup>← 回到博客</a><strong>嘴哥 · 记录管理</strong><button id="logout" hidden>退出登录</button></header>
+  <header><a href={url("/")} data-no-swup>← 回到博客</a><strong>嘴哥 · 记录管理</strong><button id="logout" hidden>退出管理</button></header>
   <main id="swup-container">
-    <section id="login-panel" class="panel login-panel"><p class="eyebrow">留住值得记住的小事</p><h1>开始记录</h1><p class="muted">登录后，可以写日记、发照片、整理相册和回复留言。</p><form id="login-form"><label>管理密码<input id="password" type="password" autocomplete="current-password" required /></label><button class="primary" type="submit">登录管理</button></form><p id="login-status" role="status" class="status"></p></section>
+    <section id="login-panel" class="panel login-panel"><p class="eyebrow">留住值得记住的小事</p><h1>专用管理入口</h1><p class="muted">用自己保存的免密码管理入口打开，就能写日记、整理相册和回复留言。首次进入后，这台设备会记住管理权限。</p><p class="note muted small">请保管好专用入口，需要在新设备上管理时，再用它打开。</p><p id="login-status" role="status" class="status"></p></section>
     <div id="editor-panel" hidden>
       <nav class="editor-tabs"><button data-mode="post" class="active">日记与碎片</button><button data-mode="album">相册</button><button data-mode="friends">友链</button><button data-mode="comments">留言</button><span id="storage-status" class="muted"></span></nav>
       <div id="record-layout" class="record-layout">

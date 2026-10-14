@@ -1,13 +1,12 @@
 import assert from "node:assert/strict";
 import { before, after, test } from "node:test";
 import { readFileSync } from "node:fs";
-import { createHash, createHmac } from "node:crypto";
+import { createHmac } from "node:crypto";
 import { build } from "esbuild";
 import { Miniflare, Log, LogLevel, convertV4MiniflareOptions } from "miniflare";
 import { postContent, parsePost } from "../src/index.mjs";
 
 const origin = "https://mouthbig324-ai.github.io";
-const password = "only-a-local-test-password";
 const secret = "only-a-local-test-session-secret-1234567890";
 const files = new Map(); const writes = []; let counter = 1;
 let worker; let db; let bucket; let token;
@@ -41,13 +40,14 @@ before(async () => {
   files.set("src/content/posts/hello.md", { sha: "original-hello", raw: postContent(post({ title: "小站的第一天", date: "2026-10-13", draft: false })) });
   files.set("src/data/friends.json", { sha: "original-friends", raw: "[]" });
   const bundled = await build({ entryPoints: [new URL("../src/index.mjs", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1")], bundle: true, format: "esm", platform: "browser", write: false, logLevel: "silent" });
-  worker = new Miniflare(convertV4MiniflareOptions({ log: new Log(LogLevel.ERROR), workers: [{ modules: true, script: bundled.outputFiles[0].text, compatibilityDate: "2026-08-01", d1Databases: ["DB"], r2Buckets: ["BUCKET"], outboundService: fakeNetwork, bindings: { BLOG_ORIGIN: origin, GITHUB_OWNER: "mouthbig324-ai", GITHUB_REPO: "mouthbig324-ai.github.io", GITHUB_TOKEN: "only-a-test-token", ADMIN_PASSWORD_HASH: createHash("sha256").update(password).digest("hex"), SESSION_SECRET: secret, MAX_STORAGE_BYTES: "8000000000" } }] }));
+  worker = new Miniflare(convertV4MiniflareOptions({ log: new Log(LogLevel.ERROR), workers: [{ modules: true, script: bundled.outputFiles[0].text, compatibilityDate: "2026-08-01", d1Databases: ["DB"], r2Buckets: ["BUCKET"], outboundService: fakeNetwork, bindings: { BLOG_ORIGIN: origin, GITHUB_OWNER: "mouthbig324-ai", GITHUB_REPO: "mouthbig324-ai.github.io", GITHUB_TOKEN: "only-a-test-token", SESSION_SECRET: secret, MAX_STORAGE_BYTES: "8000000000" } }] }));
   db = await worker.getD1Database("DB"); bucket = await worker.getR2Bucket("BUCKET");
   for (const file of ["0001_initial.sql", "0002_record_index.sql"]) {
     const sql = readFileSync(new URL("../migrations/" + file, import.meta.url), "utf8");
     for (const statement of sql.split(";").filter(value => value.trim())) await db.prepare(statement).run();
   }
-  const response = await call("/admin/login", { data: { password } }); assert.equal(response.status, 200); token = (await response.json()).token;
+  const payload = Buffer.from(JSON.stringify({ role: "owner", expires: Date.now() + 3600000 })).toString("base64url");
+  token = payload + "." + createHmac("sha256", secret).update(payload).digest("base64url");
 });
 after(async () => { await worker?.dispose(); });
 
@@ -55,14 +55,23 @@ test("visitor cannot use the publishing or upload endpoints", async () => {
   assert.equal((await call("/admin/status")).status, 401);
   assert.equal((await call("/admin/record", { data: post() })).status, 401);
   assert.equal((await call("/admin/media", { method: "POST", body: "test" })).status, 401);
-  assert.equal((await call("/admin/login", { data: { password: "wrong-password" } })).status, 401);
+  assert.equal((await call("/admin/login", { data: { password: "obsolete-password" } })).status, 401);
   assert.equal(writes.length, 0);
 });
 test("tampered and expired owner sessions fail", async () => {
   assert.equal((await call("/admin/status", { headers: { Authorization: `Bearer ${token}wrong` } })).status, 401);
+  assert.equal((await call("/admin/status", { headers: { Authorization: `Bearer ${token}.extra` } })).status, 401);
   const payload = Buffer.from(JSON.stringify({ role: "owner", expires: Date.now() - 1000 })).toString("base64url");
   const expired = payload + "." + createHmac("sha256", secret).update(payload).digest("base64url");
   assert.equal((await call("/admin/status", { headers: { Authorization: `Bearer ${expired}` } })).status, 401);
+});
+test("a private owner link can manage the site without a password endpoint", async () => {
+  const payload = Buffer.from(JSON.stringify({ role: "owner", expires: Date.now() + 365 * 24 * 3600000 })).toString("base64url");
+  const access = payload + "." + createHmac("sha256", secret).update(payload).digest("base64url");
+  const response = await call("/admin/status", { headers: { Authorization: `Bearer ${access}` } });
+  assert.equal(response.status, 200); assert.equal((await response.json()).publishing, true);
+  assert.equal((await (await call("/health")).json()).authMode, "private-link");
+  assert.equal((await call("/admin/login", { data: { password: "old-password" } })).status, 401);
 });
 test("CORS allows the blog and rejects an unrelated origin", async () => {
   const allowed = await call("/health"); assert.equal(allowed.headers.get("Access-Control-Allow-Origin"), origin);

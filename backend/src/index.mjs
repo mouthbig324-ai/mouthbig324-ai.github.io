@@ -8,19 +8,18 @@ const now = () => new Date().toISOString();
 function b64(bytes) { let binary = ""; for (let offset = 0; offset < bytes.length; offset += 32768) binary += String.fromCharCode(...bytes.subarray(offset, offset + 32768)); return btoa(binary); }
 const b64url = bytes => b64(bytes).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 function unbase64(value) { return Uint8Array.from(atob(value.replaceAll("-", "+").replaceAll("_", "/")), c => c.charCodeAt(0)); }
-export async function sha256(value) { return Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", encoder.encode(value))), byte => byte.toString(16).padStart(2, "0")).join(""); }
 async function sign(value, secret) { const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); return new Uint8Array(await crypto.subtle.sign("HMAC", key, encoder.encode(value))); }
 function same(a, b) { if (a.length !== b.length) return false; let diff = 0; for (let index = 0; index < a.length; index++) diff |= a[index] ^ b[index]; return diff === 0; }
 function configured(env) { if (!env.DB) fail(503, "服务尚未完成连接。"); }
 async function owner(request, env) {
-  if (!env.SESSION_SECRET) fail(503, "管理登录尚未完成设置。");
+  if (!env.SESSION_SECRET) fail(503, "管理入口尚未完成设置。");
   const value = request.headers.get("Authorization")?.replace(/^Bearer /, "") || "";
   try {
-    const [payload, signature] = value.split(".");
-    if (!payload || !signature || !same(await sign(payload, env.SESSION_SECRET), unbase64(signature))) fail(401, "请重新登录管理。");
+    const [payload, signature, extra] = value.split(".");
+    if (!payload || !signature || extra !== undefined || !same(await sign(payload, env.SESSION_SECRET), unbase64(signature))) fail(401, "请使用自己的专用管理入口。");
     const data = JSON.parse(new TextDecoder().decode(unbase64(payload)));
-    if (data.role !== "owner" || !Number.isFinite(data.expires) || data.expires < Date.now()) fail(401, "登录已过期，请重新登录。");
-  } catch (error) { if (error instanceof HttpError) throw error; fail(401, "请登录管理。"); }
+    if (data.role !== "owner" || !Number.isFinite(data.expires) || data.expires < Date.now()) fail(401, "管理入口已过期，请更新专用入口。");
+  } catch (error) { if (error instanceof HttpError) throw error; fail(401, "请使用自己的专用管理入口。"); }
 }
 async function bodyJson(request, limit = 250000) {
   const reader = request.body?.getReader(); if (!reader) fail(400, "缺少内容。");
@@ -142,16 +141,9 @@ async function serveMedia(request, env, url) {
 function commentPath(value) { const result = text(value, 160, "留言位置", true); if (!/^\/(posts|albums)\/[a-z0-9-]+\/$/.test(result)) fail(400, "留言位置不正确。"); return result; }
 async function route(request, env) {
   const url = new URL(request.url); const path = url.pathname;
-  if (path === "/health") return json({ ok: true, comments: !!env.DB, storage: !!env.BUCKET, publishing: !!env.GITHUB_TOKEN, login: !!env.ADMIN_PASSWORD_HASH && !!env.SESSION_SECRET });
+  if (path === "/health") return json({ ok: true, comments: !!env.DB, storage: !!env.BUCKET, publishing: !!env.GITHUB_TOKEN, login: !!env.SESSION_SECRET, authMode: "private-link" });
   if (path.startsWith("/media/") && ["GET", "HEAD"].includes(request.method)) return serveMedia(request, env, url);
   configured(env);
-  if (path === "/admin/login" && request.method === "POST") {
-    if (!env.ADMIN_PASSWORD_HASH || !env.SESSION_SECRET) fail(503, "管理登录尚未完成设置。"); await rateLimit(request, env, "login", 10, 900);
-    const data = await bodyJson(request, 1000); const password = text(data.password, 160, "密码", true);
-    if (!same(encoder.encode(await sha256(password)), encoder.encode(env.ADMIN_PASSWORD_HASH))) fail(401, "密码不正确。");
-    const expires = Date.now() + 12 * 60 * 60 * 1000; const payload = b64url(encoder.encode(JSON.stringify({ role: "owner", expires })));
-    return json({ token: payload + "." + b64url(await sign(payload, env.SESSION_SECRET)), expires });
-  }
   if (path === "/comments" && request.method === "GET") { const target = commentPath(url.searchParams.get("path")); const result = await env.DB.prepare("SELECT id, name, body, created, owner, parent_id FROM comments WHERE path = ? AND hidden = 0 ORDER BY created ASC LIMIT 300").bind(target).all(); return json({ comments: result.results }); }
   if (path === "/comments" && request.method === "POST") {
     await rateLimit(request, env, "comment", 8, 600); const data = await bodyJson(request, 12000);

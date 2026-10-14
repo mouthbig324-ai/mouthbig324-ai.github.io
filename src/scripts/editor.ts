@@ -8,14 +8,24 @@ const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getEleme
 const input = (id: string) => $<HTMLInputElement>(id);
 const value = (id: string) => ($<HTMLInputElement | HTMLTextAreaElement>(id)).value;
 const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date());
-let token = sessionStorage.getItem("zuige-admin-session") || "";
+const tokenKey = "zuige-owner-access";
+function readEntry() {
+  const incoming = new URLSearchParams(location.hash.slice(1)).get("access");
+  if (!incoming || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(incoming) || incoming.length >= 2000) return null;
+  localStorage.setItem(tokenKey, incoming);
+  history.replaceState(null, "", location.pathname + location.search);
+  return incoming;
+}
+readEntry();
+sessionStorage.removeItem("zuige-admin-session");
+let token = localStorage.getItem(tokenKey) || "";
 let mode = "post"; let id = ""; let sha = ""; let cover = ""; let photoItems: Photo[] = []; let videoItems: Video[] = [];
 let friendItems: Friend[] = []; let friendSha = ""; let busy = false; let storageReady = false;
 function status(target: string, message: string, error = false) { const element = $(target); element.replaceChildren(); element.textContent = message; element.classList.toggle("error", error); }
 async function request(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers); if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(api + path, { ...options, headers }); const data = await response.json();
-  if (response.status === 401) { token = ""; sessionStorage.removeItem("zuige-admin-session"); showLogin(); }
+  if (response.status === 401) { token = ""; localStorage.removeItem(tokenKey); showLogin(); }
   if (!response.ok) throw new Error(data.error || "操作未完成，请稍后再试。"); return data;
 }
 const send = (path: string, data: unknown) => request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
@@ -29,12 +39,7 @@ async function showEditor() {
   $("login-panel").hidden = true; $("editor-panel").hidden = false; $("logout").hidden = false;
   await selectMode("post");
 }
-$("login-form").addEventListener("submit", async event => {
-  event.preventDefault(); status("login-status", "正在登录…");
-  try { const result = await send("/admin/login", { password: value("password") }); token = result.token; sessionStorage.setItem("zuige-admin-session", token); input("password").value = ""; await showEditor(); }
-  catch (error) { status("login-status", message(error), true); }
-});
-$("logout").addEventListener("click", () => { token = ""; sessionStorage.removeItem("zuige-admin-session"); showLogin(); });
+$("logout").addEventListener("click", () => { token = ""; localStorage.removeItem(tokenKey); showLogin(); });
 const message = (error: unknown) => error instanceof Error ? error.message : "操作未完成，请稍后再试。";
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-mode]")) button.addEventListener("click", () => { selectMode(button.dataset.mode!).catch(error => status("save-status", message(error), true)); });
 async function selectMode(next: string) {
@@ -152,5 +157,10 @@ async function loadComments() {
     }
   } catch (error) { list.textContent = message(error); }
 }
-if (!api) { status("login-status", "管理服务还未连接。完成账户接入后，即可在这里登录发布。"); $<HTMLFormElement>("login-form").querySelector<HTMLButtonElement>("button")!.disabled = true; }
+if (!api) { status("login-status", "管理服务还未连接。完成账户接入后，即可开始记录。"); }
 else if (token) showEditor().catch(error => { showLogin(); status("login-status", message(error), true); });
+window.addEventListener("hashchange", () => {
+  const incoming = readEntry(); if (!incoming || !api) return;
+  token = incoming; status("login-status", "正在打开记录管理…");
+  showEditor().catch(error => { showLogin(); status("login-status", message(error), true); });
+});
