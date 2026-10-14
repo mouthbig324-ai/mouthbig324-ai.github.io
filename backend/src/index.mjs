@@ -114,29 +114,67 @@ async function upload(request, env, requestUrl) {
   const type = request.headers.get("Content-Type")?.split(";")[0];
   const extensions = { "image/webp": "webp", "image/jpeg": "jpg", "image/png": "png", "image/avif": "avif", "video/mp4": "mp4", "video/webm": "webm" };
   if (!extensions[type]) fail(400, "目前支持常见照片，以及 MP4、WebM 视频。");
-  const size = Number(request.headers.get("Content-Length")); const maximum = type.startsWith("image/") ? 12 * 1024 * 1024 : 64 * 1024 * 1024;
-  if (!Number.isInteger(size) || size < 1 || size > maximum) fail(413, type.startsWith("image/") ? "照片太大，请先压缩。" : "视频超过64 MB，请先压缩或使用已有视频链接。");
+  const size = Number(request.headers.get("Content-Length")); const maximum = 64 * 1024 * 1024;
+  if (!Number.isInteger(size) || size < 1 || size > maximum) fail(413, type.startsWith("image/") ? "照片超过64 MB，请选择较小的照片。" : "视频超过64 MB，请先压缩或使用已有视频链接。");
   const width = Math.max(0, Math.min(20000, Number(request.headers.get("X-Media-Width")) || 0)); const height = Math.max(0, Math.min(20000, Number(request.headers.get("X-Media-Height")) || 0));
   if (type.startsWith("image/") && (!Number.isInteger(width) || !Number.isInteger(height) || width < 1 || height < 1)) fail(400, "照片尺寸缺失。");
-  const budget = Number(env.MAX_STORAGE_BYTES || "8000000000");
+  const budget = Number(env.MAX_STORAGE_BYTES || "10000000000");
   const reserved = await env.DB.prepare("UPDATE storage_budget SET used_bytes = used_bytes + ? WHERE id = 1 AND used_bytes + ? <= ?").bind(size, size, budget).run();
   if (!reserved.meta?.changes) fail(507, "存储空间接近设定上限，请整理后再上传。");
   const id = crypto.randomUUID(); const key = `media/${now().slice(0, 7).replace("-", "/")}/${id}.${extensions[type]}`;
   try {
     await env.BUCKET.put(key, request.body, { httpMetadata: { contentType: type, cacheControl: "public, max-age=31536000, immutable" } });
     await env.DB.prepare("INSERT INTO media(id, object_key, type, size, width, height, created) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(id, key, type, size, width, height, now()).run();
-  } catch (error) { await env.BUCKET.delete(key).catch(() => {}); await env.DB.prepare("UPDATE storage_budget SET used_bytes = MAX(0, used_bytes - ?) WHERE id = 1").bind(size).run(); throw error; }
+  } catch (error) {
+    const removed = await env.BUCKET.delete(key).then(() => true, () => false);
+    // Keep the reservation when cleanup fails: the object may still occupy storage.
+    if (removed) await env.DB.prepare("UPDATE storage_budget SET used_bytes = MAX(0, used_bytes - ?) WHERE id = 1").bind(size).run();
+    throw error;
+  }
   return { id, src: requestUrl.origin + "/" + key, type, size, width, height };
+}
+function mediaCondition(headers, object) {
+  const modified = Math.floor(object.uploaded.getTime() / 1000) * 1000;
+  const matches = (value, weak = false) => value.split(",").some(item => { const tag = item.trim(); return tag === "*" || (weak ? tag.replace(/^W\//, "") : tag) === object.httpEtag; });
+  const match = headers.get("If-Match");
+  if (match !== null) { if (!matches(match)) return 412; }
+  else { const since = Date.parse(headers.get("If-Unmodified-Since")); if (Number.isFinite(since) && modified > since) return 412; }
+  const none = headers.get("If-None-Match");
+  if (none !== null) { if (matches(none, true)) return 304; }
+  else { const since = Date.parse(headers.get("If-Modified-Since")); if (Number.isFinite(since) && modified <= since) return 304; }
+  return 0;
+}
+function mediaRange(value, size) {
+  const parts = value?.trim().match(/^bytes=(\d*)-(\d*)$/i);
+  // Unsupported or malformed ranges fall back to the complete representation.
+  if (!parts || (!parts[1] && !parts[2])) return null;
+  if (!parts[1]) {
+    const length = Math.min(Number(parts[2]), size);
+    return length ? { offset: size - length, length } : { unsatisfiable: true };
+  }
+  const offset = Number(parts[1]); const end = parts[2] ? Number(parts[2]) : size - 1;
+  if (parts[2] && end < offset) return null;
+  if (offset >= size) return { unsatisfiable: true };
+  return { offset, length: Math.min(end, size - 1) - offset + 1 };
 }
 async function serveMedia(request, env, url) {
   if (!env.BUCKET || !/^\/media\/\d{4}\/\d{2}\/[a-f0-9-]+\.(webp|jpg|png|avif|mp4|webm)$/.test(url.pathname)) fail(404, "文件不存在。");
-  const key = url.pathname.slice(1); const object = await env.BUCKET.get(key, { range: request.headers, onlyIf: request.headers });
+  const key = url.pathname.slice(1); const metadataOnly = request.method === "HEAD" || request.headers.has("Range");
+  const object = metadataOnly ? await env.BUCKET.head(key) : await env.BUCKET.get(key);
   if (!object) fail(404, "文件不存在。");
-  const headers = new Headers({ "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff", "Accept-Ranges": "bytes" }); object.writeHttpMetadata(headers); headers.set("ETag", object.httpEtag);
-  if (!("body" in object)) return new Response(null, { status: 304, headers });
-  let status = 200;
-  if (request.headers.has("Range") && object.range) { const offset = object.range.offset ?? (object.size - object.range.suffix); const length = object.range.length ?? object.range.suffix; headers.set("Content-Range", `bytes ${offset}-${offset + length - 1}/${object.size}`); status = 206; }
-  return new Response(request.method === "HEAD" ? null : object.body, { status, headers });
+  const headers = new Headers({ "Cache-Control": "public, max-age=31536000, immutable", "X-Content-Type-Options": "nosniff", "Accept-Ranges": "bytes" }); object.writeHttpMetadata(headers); headers.set("ETag", object.httpEtag); headers.set("Last-Modified", object.uploaded.toUTCString());
+  const condition = mediaCondition(request.headers, object);
+  if (condition) { if ("body" in object) await object.body.cancel(); return new Response(null, { status: condition, headers }); }
+  if (request.method === "HEAD") { headers.set("Content-Length", String(object.size)); return new Response(null, { headers }); }
+  const ifRange = request.headers.get("If-Range"); const modified = Math.floor(object.uploaded.getTime() / 1000) * 1000;
+  const allowRange = !ifRange || ifRange === object.httpEtag || Date.parse(ifRange) === modified;
+  const range = allowRange ? mediaRange(request.headers.get("Range"), object.size) : null;
+  if (range?.unsatisfiable) { headers.set("Content-Range", `bytes */${object.size}`); return new Response(null, { status: 416, headers }); }
+  const content = "body" in object ? object : await env.BUCKET.get(key, range ? { range } : undefined);
+  if (!content) fail(404, "文件不存在。");
+  headers.set("Content-Length", String(range ? range.length : object.size));
+  if (range) headers.set("Content-Range", `bytes ${range.offset}-${range.offset + range.length - 1}/${object.size}`);
+  return new Response(content.body, { status: range ? 206 : 200, headers });
 }
 function commentPath(value) { const result = text(value, 160, "留言位置", true); if (!/^\/(posts|albums)\/[a-z0-9-]+\/$/.test(result)) fail(400, "留言位置不正确。"); return result; }
 async function route(request, env) {
@@ -152,7 +190,7 @@ async function route(request, env) {
     await env.DB.prepare("INSERT INTO comments(id, path, name, email, body, created) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), target, name, email, body, now()).run(); return json({ ok: true }, 201);
   }
   if (!path.startsWith("/admin/")) fail(404, "页面不存在。"); await owner(request, env);
-  if (path === "/admin/status") { const budget = await env.DB.prepare("SELECT used_bytes FROM storage_budget WHERE id = 1").first(); return json({ storage: !!env.BUCKET, publishing: !!env.GITHUB_TOKEN, usedBytes: budget.used_bytes, maxBytes: Number(env.MAX_STORAGE_BYTES || "8000000000") }); }
+  if (path === "/admin/status") { const budget = await env.DB.prepare("SELECT used_bytes FROM storage_budget WHERE id = 1").first(); return json({ storage: !!env.BUCKET, publishing: !!env.GITHUB_TOKEN, usedBytes: budget.used_bytes, maxBytes: Number(env.MAX_STORAGE_BYTES || "10000000000") }); }
   if (path === "/admin/records" && request.method === "GET") { const kind = url.searchParams.get("kind") === "album" ? "album" : "post"; return json({ items: await listRecords(env, kind) }); }
   if (path === "/admin/record" && request.method === "GET") return json(await readRecord(env, url.searchParams.get("kind"), url.searchParams.get("id")));
   if (path === "/admin/record" && request.method === "POST") return json(await saveRecord(env, await bodyJson(request)));

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 import { createHmac } from "node:crypto";
 import { build } from "esbuild";
 import { Miniflare, Log, LogLevel, convertV4MiniflareOptions } from "miniflare";
-import { postContent, parsePost } from "../src/index.mjs";
+import service, { postContent, parsePost } from "../src/index.mjs";
 
 const origin = "https://mouthbig324-ai.github.io";
 const secret = "only-a-local-test-session-secret-1234567890";
@@ -139,13 +139,67 @@ test("uploaded media supports full downloads, ranges, HEAD and ETag validation",
   const media = await uploaded.json(); const path = new URL(media.src).pathname;
   const full = await call(path); assert.equal(full.status, 200); assert.equal(await full.text(), "0123456789"); assert.equal(full.headers.get("Content-Type"), "video/mp4");
   const partial = await call(path, { headers: { Range: "bytes=2-5" } }); assert.equal(partial.status, 206); assert.equal(partial.headers.get("Content-Range"), "bytes 2-5/10"); assert.equal(await partial.text(), "2345");
-  const head = await call(path, { method: "HEAD" }); assert.equal(head.status, 200); assert.equal(await head.text(), "");
+  const head = await call(path, { method: "HEAD" }); assert.equal(head.status, 200); assert.equal(head.headers.get("Content-Length"), "10"); assert.equal(await head.text(), "");
   assert.equal((await call(path, { headers: { "If-None-Match": full.headers.get("ETag") } })).status, 304);
   assert.equal((await (await call("/admin/status", { auth: true })).json()).usedBytes, 10);
 });
+test("media ranges clamp to the object and reject unsatisfiable positions", async () => {
+  const path = "/media/2026/10/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa.mp4";
+  await bucket.put(path.slice(1), "0123456789", { httpMetadata: { contentType: "video/mp4" } });
+  for (const [range, expectedRange, expectedBody] of [["bytes=7-99", "bytes 7-9/10", "789"], ["bytes=4-", "bytes 4-9/10", "456789"], ["bytes=-4", "bytes 6-9/10", "6789"], ["bytes=-99", "bytes 0-9/10", "0123456789"]]) {
+    const response = await call(path, { headers: { Range: range } });
+    assert.equal(response.status, 206); assert.equal(response.headers.get("Content-Range"), expectedRange); assert.equal(response.headers.get("Content-Length"), String(expectedBody.length)); assert.equal(await response.text(), expectedBody);
+  }
+  for (const range of ["bytes=10-", "bytes=99-100", "bytes=-0"]) {
+    const response = await call(path, { headers: { Range: range } });
+    assert.equal(response.status, 416); assert.equal(response.headers.get("Content-Range"), "bytes */10"); assert.equal(await response.text(), "");
+  }
+  for (const range of ["bytes=bad", "bytes=5-2", "bytes=0-1,4-5"]) {
+    const response = await call(path, { headers: { Range: range } });
+    assert.equal(response.status, 200); assert.equal(response.headers.get("Content-Range"), null); assert.equal(await response.text(), "0123456789");
+  }
+});
+test("media preconditions and If-Range distinguish cached, stale and partial responses", async () => {
+  const path = "/media/2026/10/bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb.mp4";
+  await bucket.put(path.slice(1), "0123456789", { httpMetadata: { contentType: "video/mp4" } });
+  const head = await call(path, { method: "HEAD" }); const etag = head.headers.get("ETag"); const modified = head.headers.get("Last-Modified");
+  for (const [headers, expected] of [[{ "If-Match": '"wrong"' }, 412], [{ "If-Match": `W/${etag}` }, 412], [{ "If-Unmodified-Since": "Thu, 01 Jan 1970 00:00:00 GMT" }, 412], [{ "If-None-Match": `W/${etag}` }, 304], [{ "If-Match": etag, "If-None-Match": etag }, 304], [{ "If-Modified-Since": modified }, 304], [{ "If-None-Match": '"wrong"', "If-Modified-Since": modified }, 200]]) {
+    const response = await call(path, { headers }); assert.equal(response.status, expected);
+    assert.equal(await response.text(), expected === 200 ? "0123456789" : "");
+  }
+  for (const [validator, expected] of [[etag, 206], [modified, 206], ['"wrong"', 200], [`W/${etag}`, 200], ["Thu, 01 Jan 2099 00:00:00 GMT", 200]]) {
+    const response = await call(path, { headers: { Range: "bytes=2-5", "If-Range": validator } });
+    assert.equal(response.status, expected); assert.equal(response.headers.get("Content-Range"), expected === 206 ? "bytes 2-5/10" : null); assert.equal(await response.text(), expected === 206 ? "2345" : "0123456789");
+  }
+  const rangedHead = await call(path, { method: "HEAD", headers: { Range: "bytes=2-5" } });
+  assert.equal(rangedHead.status, 200); assert.equal(rangedHead.headers.get("Content-Length"), "10"); assert.equal(rangedHead.headers.get("Content-Range"), null); assert.equal(await rangedHead.text(), "");
+});
+test("original photos larger than 12 MiB retain their exact uploaded bytes", async () => {
+  const original = Buffer.alloc(13 * 1024 * 1024, 0x5a);
+  const response = await call("/admin/media", { auth: true, method: "POST", headers: { "Content-Type": "image/jpeg", "Content-Length": String(original.length), "X-Media-Width": "6000", "X-Media-Height": "4000" }, body: original });
+  assert.equal(response.status, 201); const saved = await response.json();
+  assert.equal(saved.size, original.length); assert.equal(saved.type, "image/jpeg"); assert.equal(saved.width, 6000); assert.equal(saved.height, 4000); assert.match(saved.src, /\.jpg$/);
+  const download = await call(new URL(saved.src).pathname); assert.equal(download.headers.get("Content-Type"), "image/jpeg"); assert.ok(Buffer.from(await download.arrayBuffer()).equals(original));
+});
+test("failed uploads release storage only after object cleanup succeeds", async () => {
+  for (const failure of ["put", "index", "index-and-cleanup"]) {
+    let used = 0; let stored = false;
+    const database = { prepare(sql) { const query = { bind() { return query; }, async run() {
+      if (sql.startsWith("UPDATE storage_budget SET used_bytes = used_bytes +")) { used += 4; return { meta: { changes: 1 } }; }
+      if (sql.startsWith("INSERT INTO media")) throw new Error("simulated index failure");
+      if (sql.startsWith("UPDATE storage_budget SET used_bytes = MAX")) { used -= 4; return { meta: { changes: 1 } }; }
+      assert.fail("Unexpected database statement");
+    } }; return query; } };
+    const storage = { async put() { if (failure === "put") throw new Error("simulated upload failure"); stored = true; }, async delete() { if (failure === "index-and-cleanup") throw new Error("simulated cleanup failure"); stored = false; } };
+    const response = await service.fetch(new Request("https://local-service.test/admin/media", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "video/mp4", "Content-Length": "4" }, body: "test" }), { DB: database, BUCKET: storage, SESSION_SECRET: secret });
+    assert.equal(response.status, 500); assert.equal(used, failure === "index-and-cleanup" ? 4 : 0); assert.equal(stored, failure === "index-and-cleanup");
+  }
+});
 test("media size and storage limits refuse uploads before anything is written", async () => {
-  const oversized = Buffer.alloc(13 * 1024 * 1024);
-  assert.equal((await call("/admin/media", { auth: true, method: "POST", headers: { "Content-Type": "image/webp", "Content-Length": String(oversized.length), "X-Media-Width": "1000", "X-Media-Height": "1000" }, body: oversized })).status, 413);
+  for (const type of ["image/jpeg", "video/mp4"]) {
+    const response = await service.fetch(new Request("https://local-service.test/admin/media", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": type, "Content-Length": String(64 * 1024 * 1024 + 1), "X-Media-Width": "1000", "X-Media-Height": "1000" }, body: "test" }), { DB: { prepare() { assert.fail("Oversized uploads must not reserve storage"); } }, BUCKET: { put() { assert.fail("Oversized uploads must not store an object"); } }, SESSION_SECRET: secret });
+    assert.equal(response.status, 413); assert.match((await response.json()).error, /64 MB/);
+  }
   const before = (await bucket.list()).objects.length;
   await db.prepare("UPDATE storage_budget SET used_bytes=8000000000 WHERE id=1").run();
   assert.equal((await call("/admin/media", { auth: true, method: "POST", headers: { "Content-Type": "video/mp4", "Content-Length": "4" }, body: "test" })).status, 507);

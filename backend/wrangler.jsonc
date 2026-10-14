@@ -9,8 +9,8 @@
     "BLOG_ORIGIN": "https://mouthbig324-ai.github.io",
     "GITHUB_OWNER": "mouthbig324-ai",
     "GITHUB_REPO": "mouthbig324-ai.github.io",
-    "MAX_STORAGE_BYTES": "8000000000"
+    "MAX_STORAGE_BYTES": "10000000000"
   },
   "d1_databases": [{ "binding": "DB", "database_name": "zuige-blog-data", "database_id": "2460834a-5ff0-4e5f-85c4-c711b77c0aef", "migrations_dir": "migrations" }],
-  "r2_buckets": []
+  "r2_buckets": [{ "binding": "BUCKET", "bucket_name": "zuige-blog-media" }]
 }

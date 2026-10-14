@@ -52,7 +52,7 @@ async function selectMode(next: string) {
   for (const element of document.querySelectorAll<HTMLElement>(".post-only")) element.hidden = mode === "album";
   $("title-label").textContent = mode === "album" ? "相册名称" : "标题"; $("description-label").textContent = mode === "album" ? "相册简介" : "简短介绍";
   $("new-record").textContent = mode === "album" ? "＋ 新建相册" : "＋ 新建记录";
-  $("media-note").textContent = storageReady ? "照片自动压缩，不改动设备上的原件。视频每个最多64 MB。" : mode === "album" ? "云存储尚未开通，暂时不能上传照片。" : "附件上传尚未开通。可以先写文字，或添加已有的视频直链。";
+  $("media-note").textContent = storageReady ? "照片按原图上传，不压缩、不改动设备上的原件。照片和视频每个最多64 MB。" : mode === "album" ? "云存储尚未开通，暂时不能上传照片。" : "附件上传尚未开通。可以先写文字，或添加已有的视频直链。";
   reset(); await loadRecords();
   } finally { busy = false; setBusy(false); }
 }
@@ -92,14 +92,11 @@ function renderMedia() {
     const button = document.createElement("button"); button.textContent = "移除"; button.type = "button"; button.addEventListener("click", () => { videoItems.splice(index, 1); renderMedia(); }); card.append(player, caption, button); list.append(card);
   });
 }
-async function compressed(file: File, maximum: number, quality: number) {
+async function photoDimensions(file: File) {
   let image: ImageBitmap;
   try { image = await createImageBitmap(file, { imageOrientation: "from-image" }); } catch { throw new Error("这张照片暂时无法读取，请先导出为 JPG 或 PNG。"); }
   try {
-    const ratio = Math.min(1, maximum / Math.max(image.width, image.height)); const canvas = document.createElement("canvas"); canvas.width = Math.max(1, Math.round(image.width * ratio)); canvas.height = Math.max(1, Math.round(image.height * ratio));
-    canvas.getContext("2d")!.drawImage(image, 0, 0, canvas.width, canvas.height);
-    const blob = await new Promise<Blob>((resolve, reject) => canvas.toBlob(value => value ? resolve(value) : reject(new Error("照片压缩失败。")), "image/webp", quality));
-    return { blob, width: canvas.width, height: canvas.height };
+    return { width: image.width, height: image.height };
   } finally { image.close(); }
 }
 async function upload(blob: Blob, width = 0, height = 0) { return request("/admin/media", { method: "POST", headers: { "Content-Type": blob.type, "X-Media-Width": String(width), "X-Media-Height": String(height) }, body: blob }); }
@@ -108,7 +105,7 @@ input("media-files").addEventListener("change", async () => {
   try {
     for (let index = 0; index < files.length; index++) {
       const file = files[index]; status("upload-status", `正在处理 ${index + 1}/${files.length}：${file.name}`);
-      if (file.type.startsWith("image/")) { const large = await compressed(file, 1920, .8); const thumb = await compressed(file, 640, .76); const saved = await upload(large.blob, large.width, large.height); const savedThumb = await upload(thumb.blob, thumb.width, thumb.height); photoItems.push({ src: saved.src, thumbnail: savedThumb.src, alt: "", width: saved.width, height: saved.height }); }
+      if (file.type.startsWith("image/")) { if (file.size > 64 * 1024 * 1024) throw new Error("照片超过64 MB，请选择较小的原图。"); const dimensions = await photoDimensions(file); const saved = await upload(file, dimensions.width, dimensions.height); photoItems.push({ src: saved.src, alt: "", width: saved.width, height: saved.height }); }
       else { if (mode === "album") throw new Error("相册目前收录照片，视频请放入日记或生活碎片。"); if (file.size > 64 * 1024 * 1024) throw new Error("视频超过64 MB，请先压缩或使用已有视频链接。"); const saved = await upload(file); videoItems.push({ src: saved.src, caption: "" }); }
       renderMedia();
     }
