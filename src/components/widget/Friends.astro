@@ -1,5 +1,6 @@
 ---
 import friends from "../../data/friends.json";
 import { url } from "../../utils/url-utils";
+import WidgetLayout from "./WidgetLayout.astro";
 ---
-{friends.length > 0 && <section class="card-base p-5"><h2 class="text-90 font-bold mb-3">朋友的小站</h2>{friends.slice(0, 3).map(friend => <a class="block py-2" href={friend.url} target="_blank" rel="noopener"><p class="text-75 font-medium hover:text-[var(--primary)]">{friend.name}</p><p class="text-50 text-xs mt-1">{friend.description}</p></a>)}<a class="text-sm text-[var(--primary)] inline-block mt-3" href={url("/friends/")}>查看全部友链 →</a></section>}
+{friends.length > 0 && <WidgetLayout id="friend-sites" name="朋友的小站">{friends.slice(0, 3).map(friend => <a class="block py-2" href={friend.url} target="_blank" rel="noopener"><p class="text-75 font-medium hover:text-[var(--primary)]">{friend.name}</p><p class="text-50 text-xs mt-1">{friend.description}</p></a>)}<a class="text-sm text-[var(--primary)] inline-block mt-3" href={url("/friends/")}>查看全部友链 →</a></WidgetLayout>}
