@@ -15,6 +15,7 @@ import { profileConfig, siteConfig } from "../../config";
 import { formatDateToYYYYMMDD } from "../../utils/date-utils";
 import PhotoGallery from "../../components/PhotoGallery.astro";
 import Comments from "../../components/Comments.astro";
+import { unplacedMedia } from "../../utils/inline-media-utils";
 
 export async function getStaticPaths() {
 	const blogEntries = await getSortedPosts();
@@ -26,6 +27,7 @@ export async function getStaticPaths() {
 
 const { entry } = Astro.props;
 const { Content, headings } = await entry.render();
+const attachments = unplacedMedia(entry.body, entry.data.photos, entry.data.videos);
 
 const { remarkPluginFrontmatter } = await entry.render();
 
@@ -107,7 +109,7 @@ const jsonLd = {
             <Markdown class="mb-6 markdown-content onload-animation">
                 <Content />
             </Markdown>
-            <PhotoGallery photos={entry.data.photos} videos={entry.data.videos} />
+            <PhotoGallery photos={attachments.photos} videos={attachments.videos} />
 
             {licenseConfig.enable && <License title={entry.data.title} slug={entry.slug} pubDate={entry.data.published} class="mb-6 rounded-xl license-container onload-animation"></License>}
 

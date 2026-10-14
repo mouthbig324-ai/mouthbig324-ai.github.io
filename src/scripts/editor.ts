@@ -1,4 +1,6 @@
 import MarkdownIt from "markdown-it";
+import { RecordComposer } from "./record-composer";
+import { unplacedMedia } from "../utils/inline-media-utils";
 type Photo = { src: string; thumbnail?: string; alt: string; width: number; height: number };
 type Video = { src: string; caption: string };
 type Friend = { name: string; url: string; description: string; note?: string };
@@ -21,6 +23,10 @@ sessionStorage.removeItem("zuige-admin-session");
 let token = localStorage.getItem(tokenKey) || "";
 let mode = "post"; let id = ""; let sha = ""; let cover = ""; let photoItems: Photo[] = []; let videoItems: Video[] = [];
 let friendItems: Friend[] = []; let friendSha = ""; let busy = false; let storageReady = false;
+const recordComposer = new RecordComposer($<HTMLTextAreaElement>("record-body"), $("body-editor"), {
+  photoChanged(src, alt) { for (const photo of photoItems) if (photo.src === src) photo.alt = alt; recordComposer.updatePhotoAlt(src, alt); renderMedia(); },
+  photoRemoved(src) { if (!recordComposer.hasPhoto(src)) { photoItems = photoItems.filter(photo => photo.src !== src); if (cover === src) cover = ""; } renderMedia(); },
+});
 function status(target: string, message: string, error = false) { const element = $(target); element.replaceChildren(); element.textContent = message; element.classList.toggle("error", error); }
 async function request(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers); if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -52,13 +58,13 @@ async function selectMode(next: string) {
   for (const element of document.querySelectorAll<HTMLElement>(".post-only")) element.hidden = mode === "album";
   $("title-label").textContent = mode === "album" ? "相册名称" : "标题"; $("description-label").textContent = mode === "album" ? "相册简介" : "简短介绍";
   $("new-record").textContent = mode === "album" ? "＋ 新建相册" : "＋ 新建记录";
-  $("media-note").textContent = storageReady ? "照片按原图上传，不压缩、不改动设备上的原件。照片和视频每个最多64 MB。" : mode === "album" ? "云存储尚未开通，暂时不能上传照片。" : "附件上传尚未开通。可以先写文字，或添加已有的视频直链。";
+  $("media-note").textContent = storageReady ? (mode === "album" ? "照片按原图上传，不压缩、不改动设备上的原件。每张最多64 MB。" : "照片上传后插在正文光标位置，原图不压缩。下方列表用于管理附件；视频显示在正文后。每个文件最多64 MB。") : mode === "album" ? "云存储尚未开通，暂时不能上传照片。" : "附件上传尚未开通。可以先写文字，或添加已有的视频直链。";
   reset(); await loadRecords();
   } finally { busy = false; setBusy(false); }
 }
 function reset() {
   id = `${mode}-${today().replaceAll("-", "")}-${crypto.randomUUID().slice(0, 6)}`; sha = ""; cover = ""; photoItems = []; videoItems = [];
-  $<HTMLFormElement>("record-form").reset(); input("record-date").value = today(); $("preview").hidden = true; status("save-status", ""); status("upload-status", ""); renderMedia();
+  $<HTMLFormElement>("record-form").reset(); recordComposer.setBody("", []); input("record-date").value = today(); $("preview").hidden = true; status("save-status", ""); status("upload-status", ""); renderMedia();
 }
 $("new-record").addEventListener("click", reset);
 async function loadRecords() {
@@ -70,26 +76,30 @@ async function loadRecords() {
   } catch (error) { list.textContent = message(error); }
 }
 async function openRecord(key: string) {
+  if (busy) return; busy = true; setBusy(true);
+  try {
   const data = await request(`/admin/record?kind=${mode}&id=${encodeURIComponent(key)}`); reset(); id = data.id; sha = data.sha;
   const meta = data.meta; input("record-title").value = meta.title || ""; input("record-date").value = String(mode === "album" ? meta.date : meta.published).slice(0, 10); $<HTMLTextAreaElement>("description").value = meta.description || "";
   $<HTMLTextAreaElement>("record-body").value = data.body || ""; $<HTMLSelectElement>("category").value = meta.category || "生活碎片"; input("featured").checked = !!meta.featured;
-  input("tags").value = (meta.tags || []).join("、"); photoItems = meta.photos || []; videoItems = meta.videos || []; cover = meta.image || ""; renderMedia();
+  input("tags").value = (meta.tags || []).join("、"); photoItems = meta.photos || []; videoItems = meta.videos || []; cover = meta.image || ""; recordComposer.setBody(data.body || "", photoItems); renderMedia();
   status("save-status", meta.draft ? "这条记录目前是草稿。" : "这条记录已发布。");
+  } finally { busy = false; setBusy(false); }
 }
 function renderMedia() {
   const list = $("media-list"); list.replaceChildren();
   photoItems.forEach((photo, index) => {
     const card = document.createElement("div"); card.className = "media-item";
     const image = document.createElement("img"); image.src = photo.thumbnail || photo.src; image.alt = photo.alt;
-    const caption = document.createElement("input"); caption.placeholder = "照片说明（可选）"; caption.value = photo.alt; caption.maxLength = 300; caption.addEventListener("input", () => { photo.alt = caption.value; });
+    const caption = document.createElement("input"); caption.placeholder = "照片说明（可选）"; caption.value = photo.alt; caption.maxLength = 300; caption.disabled = busy; caption.addEventListener("input", () => { photo.alt = caption.value; recordComposer.updatePhotoAlt(photo.src, caption.value); });
     const controls = document.createElement("div"); controls.className = "media-controls";
-    for (const [label, action] of [["←", () => { if (index > 0) [photoItems[index - 1], photoItems[index]] = [photoItems[index], photoItems[index - 1]]; renderMedia(); }], ["→", () => { if (index < photoItems.length - 1) [photoItems[index + 1], photoItems[index]] = [photoItems[index], photoItems[index + 1]]; renderMedia(); }], [cover === photo.src ? "已作封面" : "设为封面", () => { cover = photo.src; renderMedia(); }], ["移除", () => { photoItems.splice(index, 1); if (cover === photo.src) cover = ""; renderMedia(); }]] as [string, () => void][]) { const button = document.createElement("button"); button.type = "button"; button.textContent = label; button.addEventListener("click", action); controls.append(button); }
+    if (mode === "post") { const insert = document.createElement("button"); insert.type = "button"; insert.textContent = recordComposer.hasPhoto(photo.src) ? "再次插入正文" : "插入正文"; insert.disabled = busy; insert.addEventListener("click", () => { recordComposer.insertPhoto(photo); renderMedia(); }); controls.append(insert); }
+    for (const [label, action] of [["←", () => { if (index > 0) [photoItems[index - 1], photoItems[index]] = [photoItems[index], photoItems[index - 1]]; renderMedia(); }], ["→", () => { if (index < photoItems.length - 1) [photoItems[index + 1], photoItems[index]] = [photoItems[index], photoItems[index + 1]]; renderMedia(); }], [cover === photo.src ? "已作封面" : "设为封面", () => { cover = photo.src; renderMedia(); }], ["移除", () => { photoItems.splice(index, 1); recordComposer.removePhoto(photo.src); if (cover === photo.src) cover = ""; renderMedia(); }]] as [string, () => void][]) { const button = document.createElement("button"); button.type = "button"; button.textContent = label; button.disabled = busy; button.addEventListener("click", action); controls.append(button); }
     card.append(image, caption, controls); list.append(card);
   });
   videoItems.forEach((video, index) => {
     const card = document.createElement("div"); card.className = "media-item"; const player = document.createElement("video"); player.src = video.src; player.controls = true; player.preload = "metadata";
-    const caption = document.createElement("input"); caption.placeholder = "视频说明（可选）"; caption.value = video.caption; caption.addEventListener("input", () => { video.caption = caption.value; });
-    const button = document.createElement("button"); button.textContent = "移除"; button.type = "button"; button.addEventListener("click", () => { videoItems.splice(index, 1); renderMedia(); }); card.append(player, caption, button); list.append(card);
+    const caption = document.createElement("input"); caption.placeholder = "视频说明（可选）"; caption.value = video.caption; caption.disabled = busy; caption.addEventListener("input", () => { video.caption = caption.value; });
+    const button = document.createElement("button"); button.textContent = "移除"; button.type = "button"; button.disabled = busy; button.addEventListener("click", () => { videoItems.splice(index, 1); renderMedia(); }); card.append(player, caption, button); list.append(card);
   });
 }
 async function photoDimensions(file: File) {
@@ -100,21 +110,23 @@ async function photoDimensions(file: File) {
   } finally { image.close(); }
 }
 async function upload(blob: Blob, width = 0, height = 0) { return request("/admin/media", { method: "POST", headers: { "Content-Type": blob.type, "X-Media-Width": String(width), "X-Media-Height": String(height) }, body: blob }); }
+$("insert-photo").addEventListener("click", () => { if (busy || !storageReady) return; input("media-files").accept = "image/jpeg,image/png,image/webp,image/avif"; input("media-files").click(); });
+$("choose-media").addEventListener("click", () => { input("media-files").accept = mode === "album" ? "image/jpeg,image/png,image/webp,image/avif" : "image/jpeg,image/png,image/webp,image/avif,video/mp4,video/webm"; });
 input("media-files").addEventListener("change", async () => {
   if (busy) return; const files = [...(input("media-files").files || [])]; if (!files.length) return; busy = true; setBusy(true);
   try {
     for (let index = 0; index < files.length; index++) {
       const file = files[index]; status("upload-status", `正在处理 ${index + 1}/${files.length}：${file.name}`);
-      if (file.type.startsWith("image/")) { if (file.size > 64 * 1024 * 1024) throw new Error("照片超过64 MB，请选择较小的原图。"); const dimensions = await photoDimensions(file); const saved = await upload(file, dimensions.width, dimensions.height); photoItems.push({ src: saved.src, alt: "", width: saved.width, height: saved.height }); }
+      if (file.type.startsWith("image/")) { if (file.size > 64 * 1024 * 1024) throw new Error("照片超过64 MB，请选择较小的原图。"); const dimensions = await photoDimensions(file); const saved = await upload(file, dimensions.width, dimensions.height); const photo = { src: saved.src, alt: "", width: saved.width, height: saved.height }; photoItems.push(photo); if (mode === "post") recordComposer.insertPhoto(photo); }
       else { if (mode === "album") throw new Error("相册目前收录照片，视频请放入日记或生活碎片。"); if (file.size > 64 * 1024 * 1024) throw new Error("视频超过64 MB，请先压缩或使用已有视频链接。"); const saved = await upload(file); videoItems.push({ src: saved.src, caption: "" }); }
       renderMedia();
     }
     status("upload-status", "已上传，准备好后可以保存草稿或发布。");
   } catch (error) { status("upload-status", message(error), true); }
-  finally { busy = false; setBusy(false); input("media-files").value = ""; }
+  finally { busy = false; setBusy(false); input("media-files").value = ""; if (mode === "post") recordComposer.focusCursor(); }
 });
 $("add-video").addEventListener("click", () => { const src = value("video-url").trim(); if (!/^https:\/\/[^\s]+$/.test(src)) return status("upload-status", "请填写有效的 HTTPS 视频链接。", true); videoItems.push({ src, caption: "" }); input("video-url").value = ""; renderMedia(); });
-function setBusy(state: boolean) { for (const control of document.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLTextAreaElement | HTMLSelectElement>("#editor-panel button, #editor-panel input, #editor-panel textarea, #editor-panel select")) control.disabled = state; input("media-files").disabled = state || !storageReady; }
+function setBusy(state: boolean) { for (const control of document.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLTextAreaElement | HTMLSelectElement>("#editor-panel button, #editor-panel input, #editor-panel textarea, #editor-panel select")) control.disabled = state; recordComposer.setDisabled(state); input("media-files").disabled = state || !storageReady; $<HTMLButtonElement>("insert-photo").disabled = state || !storageReady; }
 async function save(draft: boolean) {
   if (busy || !$<HTMLFormElement>("record-form").reportValidity()) return; busy = true; setBusy(true); status("save-status", "正在保存…");
   try {
@@ -129,8 +141,9 @@ $("record-form").addEventListener("submit", event => { event.preventDefault(); v
 $("preview-toggle").addEventListener("click", () => {
   $("preview").hidden = !$("preview").hidden; $("preview-title").textContent = value("record-title"); $("preview-body").innerHTML = parser.render(mode === "album" ? value("description") : value("record-body"));
   const target = $("preview-media"); target.replaceChildren();
-  for (const photo of photoItems) { const image = document.createElement("img"); image.src = photo.thumbnail || photo.src; image.alt = photo.alt; image.style.width = "100%"; image.style.borderRadius = "10px"; target.append(image); }
-  for (const video of videoItems) { const player = document.createElement("video"); player.src = video.src; player.controls = true; player.style.width = "100%"; target.append(player); }
+  const attachments = mode === "album" ? { photos: photoItems, videos: videoItems } : unplacedMedia(value("record-body"), photoItems, videoItems);
+  for (const photo of attachments.photos) { const image = document.createElement("img"); image.src = photo.thumbnail || photo.src; image.alt = photo.alt; image.style.width = "100%"; image.style.borderRadius = "10px"; target.append(image); }
+  for (const video of attachments.videos) { const player = document.createElement("video"); player.src = video.src; player.controls = true; player.style.width = "100%"; target.append(player); }
   if (!$("preview").hidden) $("preview").scrollIntoView({ behavior: "smooth", block: "start" });
 });
 async function loadFriends() { try { const data = await request("/admin/record?kind=friends&id=friends"); friendItems = data.meta; friendSha = data.sha; renderFriends(); } catch (error) { status("friends-status", message(error), true); } }

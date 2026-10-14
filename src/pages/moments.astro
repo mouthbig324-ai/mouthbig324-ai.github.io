@@ -5,17 +5,18 @@ import Markdown from "../components/misc/Markdown.astro";
 import { getSortedPosts } from "../utils/content-utils";
 import { getPostUrlBySlug } from "../utils/url-utils";
 import PhotoGallery from "../components/PhotoGallery.astro";
+import { unplacedMedia } from "../utils/inline-media-utils";
 const posts = (await getSortedPosts()).filter(post => post.data.category === "生活碎片");
-const moments = await Promise.all(posts.map(async post => ({ post, ...(await post.render()) })));
+const moments = await Promise.all(posts.map(async post => ({ post, attachments: unplacedMedia(post.body, post.data.photos, post.data.videos), ...(await post.render()) })));
 ---
 <MainGridLayout title="生活碎片" description="几句话、几张照片，记住普通的一天。">
   <JournalHeader title="生活碎片" description="不一定要发生大事，普通的一天也值得记住。" />
   <div class="flex flex-col gap-4">
-    {moments.map(({ post, Content }) => <article class="card-base px-6 md:px-9 py-7">
+    {moments.map(({ post, Content, attachments }) => <article class="card-base px-6 md:px-9 py-7">
       <a class="text-sm text-[var(--primary)]" href={getPostUrlBySlug(post.slug)}><time datetime={post.data.published.toISOString()}>{post.data.published.toISOString().slice(0, 10).replaceAll("-", ".")}</time></a>
       <h2 class="text-90 text-xl font-bold mt-3 mb-5"><a href={getPostUrlBySlug(post.slug)}>{post.data.title}</a></h2>
       <Markdown class="moment-content"><Content /></Markdown>
-      <PhotoGallery photos={post.data.photos} videos={post.data.videos} />
+      <PhotoGallery photos={attachments.photos} videos={attachments.videos} />
       <a class="inline-block mt-4 text-sm text-[var(--primary)]" href={getPostUrlBySlug(post.slug) + "#comments"}>查看记录与留言 →</a>
     </article>)}
     {moments.length === 0 && <div class="card-base px-6 py-14 text-center text-50">留一个位置，给下一件想分享的小事。</div>}
