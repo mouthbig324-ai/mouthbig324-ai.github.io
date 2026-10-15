@@ -14,7 +14,7 @@ import { url } from "../utils/url-utils";
         <aside class="panel records"><button id="new-record" class="primary">＋ 新建记录</button><div id="record-list"></div></aside>
         <section class="panel record-editor">
           <form id="record-form">
-            <div class="row post-only"><label>类型<select id="category"><option>生活碎片</option><option>旅行日记</option></select></label><label class="checkbox"><input id="featured" type="checkbox" />设为精选</label></div>
+            <div class="row post-only"><label>类型<select id="category"><option>生活碎片</option><option>旅行日记</option><option>日常</option><option value="">无</option></select></label><label class="checkbox"><input id="featured" type="checkbox" />设为精选</label></div>
             <label><span id="title-label">标题</span><input id="record-title" maxlength="160" placeholder="给这次记录起个名字" required /></label>
             <div class="row"><label>日期<input id="record-date" type="date" required /></label><label class="post-only">标签<input id="tags" placeholder="旅行、杭州、日常…" /></label></div>
             <label><span id="description-label">简短介绍</span><textarea id="description" rows="2" maxlength="500" placeholder="用一句话介绍这次记录（可选）"></textarea></label>

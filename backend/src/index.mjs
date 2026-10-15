@@ -63,7 +63,7 @@ function decodeContent(result) { return new TextDecoder().decode(unbase64(result
 export function parsePost(raw) { const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/); if (!match) return { meta: {}, body: raw }; return { meta: parseYaml(match[1]) || {}, body: match[2].trim() }; }
 export function postContent(data) {
   const title = text(data.title, 160, "标题", true); const published = date(data.date);
-  const category = data.category === "旅行日记" ? "旅行日记" : "生活碎片";
+  const category = data.category === "" || data.category === "无" ? "" : ["生活碎片", "旅行日记", "日常"].includes(data.category) ? data.category : "生活碎片";
   const tags = Array.isArray(data.tags) ? data.tags.slice(0, 20).map(tag => text(tag, 40, "标签", true)) : [];
   const meta = { title, published, updated: new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date()), description: text(data.description || "", 500, "摘要"), image: data.image ? source(data.image) : "", tags, category, draft: data.draft === true, featured: data.featured === true, photos: photos(data.photos || []), videos: videos(data.videos || []), lang: "zh_CN" };
   return "---\n" + Object.entries(meta).map(([key, value]) => `${key}: ${key === "published" || key === "updated" ? value : JSON.stringify(value)}`).join("\n") + "\n---\n\n" + text(data.body || "", 200000, "正文") + "\n";

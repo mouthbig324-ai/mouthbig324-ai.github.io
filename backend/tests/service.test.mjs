@@ -122,6 +122,30 @@ test("stale editors and unsafe file paths cannot overwrite records", async () =>
   assert.equal((await call("/admin/record", { auth: true, data: post({ id: "../../config" }) })).status, 400);
   assert.equal((await call("/admin/record", { auth: true, data: post({ id: "invalid-date", date: "2026-02-30" }) })).status, 400);
 });
+test("daily and uncategorized records retain their category through saving and editing", async () => {
+  for (const [index, category] of ["日常", ""].entries()) {
+    const id = `test-category-${index}`;
+    const first = await call("/admin/record", { auth: true, data: post({ id, category }) });
+    assert.equal(first.status, 200);
+    assert.equal(parsePost(files.get(`src/content/posts/${id}.md`).raw).meta.category, category);
+    const reopenedResponse = await call(`/admin/record?kind=post&id=${id}`, { auth: true });
+    assert.equal(reopenedResponse.status, 200);
+    const reopened = await reopenedResponse.json();
+    assert.equal(reopened.meta.category, category);
+    const edited = await call("/admin/record", { auth: true, data: post({ id, sha: reopened.sha, category: reopened.meta.category, body: reopened.body + "\nEdited record.", draft: false }) });
+    assert.equal(edited.status, 200);
+    const finalResponse = await call(`/admin/record?kind=post&id=${id}`, { auth: true });
+    assert.equal(finalResponse.status, 200);
+    const final = await finalResponse.json();
+    assert.equal(final.meta.category, category);
+    assert.equal(final.meta.draft, false);
+    assert.equal(final.body, reopened.body + "\nEdited record.");
+  }
+  assert.equal(parsePost(postContent(post({ category: "无" }))).meta.category, "");
+  for (const category of [undefined, "unknown"]) {
+    assert.equal(parsePost(postContent(post({ category }))).meta.category, "生活碎片");
+  }
+});
 test("publishing, albums and friend links use only their permitted repository paths", async () => {
   const sha = files.get("src/content/posts/test-travel.md").sha;
   const published = await (await call("/admin/record", { auth: true, data: post({ sha, draft: false, featured: true, photos: [{ src: "https://media.example.test/1.webp", width: 1920, height: 1280, alt: "湖边" }] }) })).json();

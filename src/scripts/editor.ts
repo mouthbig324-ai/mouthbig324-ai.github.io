@@ -80,7 +80,7 @@ async function openRecord(key: string) {
   try {
   const data = await request(`/admin/record?kind=${mode}&id=${encodeURIComponent(key)}`); reset(); id = data.id; sha = data.sha;
   const meta = data.meta; input("record-title").value = meta.title || ""; input("record-date").value = String(mode === "album" ? meta.date : meta.published).slice(0, 10); $<HTMLTextAreaElement>("description").value = meta.description || "";
-  $<HTMLTextAreaElement>("record-body").value = data.body || ""; $<HTMLSelectElement>("category").value = meta.category || "生活碎片"; input("featured").checked = !!meta.featured;
+  $<HTMLTextAreaElement>("record-body").value = data.body || ""; $<HTMLSelectElement>("category").value = meta.category || ""; input("featured").checked = !!meta.featured;
   input("tags").value = (meta.tags || []).join("、"); photoItems = meta.photos || []; videoItems = meta.videos || []; cover = meta.image || ""; recordComposer.setBody(data.body || "", photoItems); renderMedia();
   status("save-status", meta.draft ? "这条记录目前是草稿。" : "这条记录已发布。");
   } finally { busy = false; setBusy(false); }
