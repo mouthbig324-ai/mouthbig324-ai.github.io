@@ -52,6 +52,8 @@
 
 ## 本地验证
 
+2026-10-18：新增 `0003_article_views.sql`，仅创建 `article_views` 累计表和 `view_visits` 去重表。更新已有服务时先执行 `wrangler d1 migrations apply zuige-blog-data --remote`，再部署 Worker，最后发布网页。`GET /views?path=/posts/文章标识/` 只读数量；`POST /views` 接受 path 和浏览器随机 visitor UUID，按北京时间当天、文章和浏览器去重。浏览器标识仅保存在本地；服务端用现有 SESSION_SECRET 做 HMAC，不保存原始 visitor 或 IP。D1 事务同时更新总数和去重记录，每日清理两天前的去重记录，累计总数保留。此统计不是严格的人数统计，也不能还原上线前的流量；不支持本地存储的浏览器只读数量。单个来源每十分钟最多调用统计写入 120 次。留言 POST 可选 parent_id，必须指向同一篇文章或相册的未隐藏留言；既有博主回复的 parent_id 可直接用于前台展示，无需改动旧评论数据。
+
 ```text
 npm ci
 npm test

@@ -7,7 +7,7 @@ import sanitizeHtml from "sanitize-html";
 import { siteConfig } from "@/config";
 import { publicMediaUrl } from "../utils/media-utils";
 
-const parser = new MarkdownIt();
+const parser = new MarkdownIt({ breaks: true });
 
 function stripInvalidXmlChars(str: string): string {
 	return str.replace(

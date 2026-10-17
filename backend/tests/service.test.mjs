@@ -42,7 +42,7 @@ before(async () => {
   const bundled = await build({ entryPoints: [new URL("../src/index.mjs", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1")], bundle: true, format: "esm", platform: "browser", write: false, logLevel: "silent" });
   worker = new Miniflare(convertV4MiniflareOptions({ log: new Log(LogLevel.ERROR), workers: [{ modules: true, script: bundled.outputFiles[0].text, compatibilityDate: "2026-08-01", d1Databases: ["DB"], r2Buckets: ["BUCKET"], outboundService: fakeNetwork, bindings: { BLOG_ORIGIN: origin, GITHUB_OWNER: "mouthbig324-ai", GITHUB_REPO: "mouthbig324-ai.github.io", GITHUB_TOKEN: "only-a-test-token", SESSION_SECRET: secret, MAX_STORAGE_BYTES: "8000000000" } }] }));
   db = await worker.getD1Database("DB"); bucket = await worker.getR2Bucket("BUCKET");
-  for (const file of ["0001_initial.sql", "0002_record_index.sql"]) {
+  for (const file of ["0001_initial.sql", "0002_record_index.sql", "0003_article_views.sql"]) {
     const sql = readFileSync(new URL("../migrations/" + file, import.meta.url), "utf8");
     for (const statement of sql.split(";").filter(value => value.trim())) await db.prepare(statement).run();
   }
@@ -106,6 +106,40 @@ test("an excessive posting rate is stopped", async () => {
   let last;
   for (let index = 0; index < 9; index++) last = await call("/comments", { data, headers: { "CF-Connecting-IP": "192.0.2.10" } });
   assert.equal(last.status, 429);
+});
+test("visitor replies retain the recipient, reject hidden or cross-article parents and cannot claim ownership", async () => {
+  const path = "/posts/thread-test/";
+  const data = { path, name: "访客", email: "visitor@example.test", body: "第一行\n第二行 👍" };
+  const headers = { "CF-Connecting-IP": "192.0.2.21" };
+  assert.equal((await call("/comments", { data, headers })).status, 201);
+  const parent = (await (await call("/comments?path=" + encodeURIComponent(path))).json()).comments[0];
+  assert.equal((await call("/comments", { data: { ...data, parent_id: parent.id, owner: true }, headers })).status, 201);
+  const comments = (await (await call("/comments?path=" + encodeURIComponent(path))).json()).comments;
+  const reply = comments.find(item => item.parent_id === parent.id);
+  assert.equal(reply.owner, 0); assert.equal(reply.email, undefined); assert.equal(reply.body, data.body);
+  assert.equal((await call("/comments", { data: { ...data, path: "/posts/other/", parent_id: parent.id }, headers })).status, 404);
+  await call("/admin/comments/hide", { auth: true, data: { id: parent.id } });
+  assert.equal((await call("/comments", { data: { ...data, parent_id: parent.id }, headers })).status, 404);
+  assert.equal((await (await call("/comments?path=" + encodeURIComponent(path))).json()).comments.length, 1);
+});
+test("view totals are durable, atomic and deduplicated per browser and article", async () => {
+  const path = "/posts/view-test/";
+  const visitor = "11111111-1111-4111-8111-111111111111";
+  const headers = { "CF-Connecting-IP": "192.0.2.30" };
+  assert.deepEqual(await (await call("/views?path=" + encodeURIComponent(path))).json(), { views: 0 });
+  const responses = await Promise.all(Array.from({ length: 6 }, () => call("/views", { data: { path, visitor }, headers })));
+  for (const response of responses) { assert.equal(response.status, 200); assert.equal((await response.json()).views, 1); }
+  assert.equal((await (await call("/views", { data: { path, visitor: "22222222-2222-4222-8222-222222222222" }, headers })).json()).views, 2);
+  assert.equal((await (await call("/views", { data: { path: "/posts/another-view/", visitor }, headers })).json()).views, 1);
+  assert.equal((await (await call("/views?path=" + encodeURIComponent(path))).json()).views, 2);
+  assert.equal((await call("/views", { data: { path: "/admin/", visitor }, headers })).status, 400);
+  assert.equal((await call("/views", { data: { path, visitor: "invalid" }, headers })).status, 400);
+  const visits = await db.prepare("SELECT id FROM view_visits").all();
+  assert.equal(visits.results.length, 3); assert.ok(visits.results.every(item => !item.id.includes(visitor)));
+  await db.prepare("INSERT INTO view_visits(id, expires) VALUES ('expired-test', 1)").run();
+  await service.scheduled({}, { DB: db });
+  assert.equal(await db.prepare("SELECT id FROM view_visits WHERE id = 'expired-test'").first(), null);
+  assert.equal((await (await call("/views?path=" + encodeURIComponent(path))).json()).views, 2);
 });
 test("drafts and long Chinese text save with valid dates and a readable record list", async () => {
   const text = "在湖边记录一天。".repeat(7000);

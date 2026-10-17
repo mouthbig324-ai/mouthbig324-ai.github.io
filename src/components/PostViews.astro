@@ -1,0 +1,12 @@
+---
+import { apiBase } from "../utils/services";
+interface Props { path: string }
+const { path } = Astro.props;
+---
+{apiBase && <p class="post-views text-50 text-sm mb-5" data-api={apiBase} data-path={path} data-pagefind-ignore title="从 2026 年 10 月 18 日开始统计；同一浏览器当天重复访问同一篇文章计一次。">浏览量：<span aria-live="polite">加载中…</span></p>}
+<script>
+  import { mountViews } from "../scripts/post-views";
+  mountViews();
+  const setup = () => { window.swup?.hooks.on("page:view", mountViews); };
+  if (window.swup) setup(); else document.addEventListener("swup:enable", setup, { once: true });
+</script>

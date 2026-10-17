@@ -1,4 +1,5 @@
 import MarkdownIt from "markdown-it";
+import { emojiPicker } from "./emoji-picker";
 import { RecordComposer } from "./record-composer";
 import { unplacedMedia } from "../utils/inline-media-utils";
 import { publicMediaUrl } from "../utils/media-utils";
@@ -182,13 +183,18 @@ async function loadComments() {
   const list = $("admin-comment-list"); list.textContent = "正在加载留言…";
   try {
     const data = await request("/admin/comments"); list.replaceChildren(); if (!data.items.length) list.textContent = "还没有留言。";
-    for (const item of data.items as { id: string; name: string; email: string; path: string; body: string; created: string }[]) {
+    for (const item of data.items as { id: string; name: string; email: string; path: string; body: string; created: string; parent_id?: string }[]) {
       const card = document.createElement("article"); card.className = "admin-comment"; const title = document.createElement("strong"); title.textContent = `${item.name} · ${new Date(item.created).toLocaleString("zh-CN")}`;
       const context = document.createElement("p"); context.className = "muted small"; context.textContent = `${item.path} · ${item.email}`; const body = document.createElement("p"); body.textContent = item.body;
-      const reply = document.createElement("textarea"); reply.rows = 2; reply.placeholder = "回复这条留言…"; const actions = document.createElement("div"); actions.className = "actions";
+      body.style.whiteSpace = "pre-wrap";
+      if (item.parent_id) {
+        const parent = data.items.find((entry: { id: string }) => entry.id === item.parent_id);
+        const recipient = document.createElement("p"); recipient.className = "muted small"; recipient.textContent = parent ? `回复 ${parent.name}：${parent.body.slice(0, 80)}` : "回复的原留言已隐藏或不在当前列表中"; card.append(recipient);
+      }
+      const reply = document.createElement("textarea"); reply.rows = 2; reply.maxLength = 3000; reply.placeholder = `回复 ${item.name}…`; reply.setAttribute("aria-label", `回复 ${item.name}`); const actions = document.createElement("div"); actions.className = "actions";
       const submit = document.createElement("button"); submit.textContent = "回复"; submit.className = "primary"; submit.addEventListener("click", async () => { try { await send("/admin/comments/reply", { id: item.id, body: reply.value }); reply.value = ""; status("comments-status", "回复已发表。"); await loadComments(); } catch (error) { status("comments-status", message(error), true); } });
       const hide = document.createElement("button"); hide.textContent = "隐藏"; hide.addEventListener("click", async () => { try { await send("/admin/comments/hide", { id: item.id }); await loadComments(); } catch (error) { status("comments-status", message(error), true); } });
-      actions.append(submit, hide); card.append(title, context, body, reply, actions); list.append(card);
+      actions.append(submit, hide); card.append(title, context, body, reply, emojiPicker(reply), actions); list.append(card);
     }
   } catch (error) { list.textContent = message(error); }
 }

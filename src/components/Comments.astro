@@ -1,5 +1,6 @@
 ---
 import { apiBase } from "../utils/services";
+import "../styles/comments.css";
 interface Props { path: string }
 const { path } = Astro.props;
 ---
@@ -8,6 +9,7 @@ const { path } = Astro.props;
   <p class="text-50 text-sm mb-5">欢迎聊聊你的感受。邮箱不会公开。</p>
   <div class="comment-list flex flex-col gap-4 mb-6" aria-live="polite"></div>
   <form class="comment-form flex flex-col gap-3">
+    <div class="comment-reply-context text-75" hidden><span></span><button class="comment-cancel-reply" type="button">取消回复</button></div>
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3"><input name="name" maxlength="40" placeholder="昵称" aria-label="昵称" required /><input name="email" type="email" maxlength="160" placeholder="邮箱（不公开）" aria-label="邮箱" required /></div>
     <input name="company" class="comment-honeypot" tabindex="-1" autocomplete="off" aria-hidden="true" />
     <textarea name="body" rows="4" maxlength="3000" placeholder="写下你的留言…" aria-label="留言内容" required></textarea>

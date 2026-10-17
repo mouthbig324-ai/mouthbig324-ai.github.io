@@ -177,17 +177,45 @@ async function serveMedia(request, env, url) {
   return new Response(content.body, { status: range ? 206 : 200, headers });
 }
 function commentPath(value) { const result = text(value, 160, "留言位置", true); if (!/^\/(posts|albums)\/[a-z0-9-]+\/$/.test(result)) fail(400, "留言位置不正确。"); return result; }
+function articlePath(value) { const result = commentPath(value); if (!result.startsWith("/posts/")) fail(400, "文章位置不正确。"); return result; }
+async function articleViews(request, env, url) {
+  if (request.method === "GET") {
+    const target = articlePath(url.searchParams.get("path"));
+    const row = await env.DB.prepare("SELECT count FROM article_views WHERE path = ?").bind(target).first();
+    return json({ views: row?.count || 0 });
+  }
+  const data = await bodyJson(request, 1000); const target = articlePath(data.path);
+  if (typeof data.visitor !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(data.visitor)) fail(400, "访问标识不正确。");
+  await rateLimit(request, env, "views", 120, 600);
+  // One count per browser, article and Shanghai calendar day. Store no raw ID or IP.
+  const day = Math.floor((Date.now() + 8 * 3600000) / 86400000);
+  const id = b64url(await sign(`view:${day}:${target}:${data.visitor}`, env.SESSION_SECRET));
+  const expires = Math.floor(Date.now() / 1000) + 172800;
+  // D1 batches are transactions: the total and deduplication record commit together.
+  const results = await env.DB.batch([
+    env.DB.prepare("INSERT INTO article_views(path, count) SELECT ?, 1 WHERE NOT EXISTS (SELECT 1 FROM view_visits WHERE id = ?) ON CONFLICT(path) DO UPDATE SET count = count + 1").bind(target, id),
+    env.DB.prepare("INSERT OR IGNORE INTO view_visits(id, expires) VALUES (?, ?)").bind(id, expires),
+    env.DB.prepare("SELECT count FROM article_views WHERE path = ?").bind(target),
+  ]);
+  return json({ views: results[2].results[0]?.count || 0 });
+}
 async function route(request, env) {
   const url = new URL(request.url); const path = url.pathname;
   if (path === "/health") return json({ ok: true, comments: !!env.DB, storage: !!env.BUCKET, publishing: !!env.GITHUB_TOKEN, login: !!env.SESSION_SECRET, authMode: "private-link" });
   if (path.startsWith("/media/") && ["GET", "HEAD"].includes(request.method)) return serveMedia(request, env, url);
   configured(env);
+  if (path === "/views" && ["GET", "POST"].includes(request.method)) return articleViews(request, env, url);
   if (path === "/comments" && request.method === "GET") { const target = commentPath(url.searchParams.get("path")); const result = await env.DB.prepare("SELECT id, name, body, created, owner, parent_id FROM comments WHERE path = ? AND hidden = 0 ORDER BY created ASC LIMIT 300").bind(target).all(); return json({ comments: result.results }); }
   if (path === "/comments" && request.method === "POST") {
     await rateLimit(request, env, "comment", 8, 600); const data = await bodyJson(request, 12000);
     if (data.company) return json({ ok: true }); const target = commentPath(data.path); const name = text(data.name, 40, "昵称", true); const email = text(data.email, 160, "邮箱", true); const body = text(data.body, 3000, "留言", true);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) fail(400, "邮箱格式不正确。");
-    await env.DB.prepare("INSERT INTO comments(id, path, name, email, body, created) VALUES (?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), target, name, email, body, now()).run(); return json({ ok: true }, 201);
+    const parentId = data.parent_id == null ? null : text(data.parent_id, 64, "回复对象", true);
+    if (parentId) {
+      const parent = await env.DB.prepare("SELECT id FROM comments WHERE id = ? AND path = ? AND hidden = 0").bind(parentId, target).first();
+      if (!parent) fail(404, "原留言已隐藏或不存在，请取消回复后重试。");
+    }
+    await env.DB.prepare("INSERT INTO comments(id, path, name, email, body, created, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?)").bind(crypto.randomUUID(), target, name, email, body, now(), parentId).run(); return json({ ok: true }, 201);
   }
   if (!path.startsWith("/admin/")) fail(404, "页面不存在。"); await owner(request, env);
   if (path === "/admin/status") { const budget = await env.DB.prepare("SELECT used_bytes FROM storage_budget WHERE id = 1").first(); return json({ storage: !!env.BUCKET, publishing: !!env.GITHUB_TOKEN, usedBytes: budget.used_bytes, maxBytes: Number(env.MAX_STORAGE_BYTES || "10000000000") }); }
@@ -202,7 +230,12 @@ async function route(request, env) {
   fail(404, "页面不存在。");
 }
 export default {
-  async scheduled(_event, env) { if (env.DB) await env.DB.prepare("DELETE FROM request_limits WHERE expires < ?").bind(Math.floor(Date.now() / 1000)).run(); },
+  async scheduled(_event, env) {
+    if (env.DB) await env.DB.batch([
+      env.DB.prepare("DELETE FROM request_limits WHERE expires < ?").bind(Math.floor(Date.now() / 1000)),
+      env.DB.prepare("DELETE FROM view_visits WHERE expires < ?").bind(Math.floor(Date.now() / 1000)),
+    ]);
+  },
   async fetch(request, env) {
     const origin = request.headers.get("Origin"); const allowed = [env.BLOG_ORIGIN, env.ALLOWED_DEV_ORIGIN].filter(Boolean);
     if (origin && !allowed.includes(origin)) return json({ error: "请求来源不受支持。" }, 403);

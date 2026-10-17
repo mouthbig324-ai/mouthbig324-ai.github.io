@@ -25,6 +25,7 @@ import { remarkReadingTime } from "./src/plugins/remark-reading-time.mjs";
 import { pluginCustomCopyButton } from "./src/plugins/expressive-code/custom-copy-button.js";
 import services from "./src/data/services.json" with { type: "json" };
 import rehypeMediaUrls from "./src/plugins/rehype-media-urls.mjs";
+import remarkJournalBreaks from "./src/plugins/remark-journal-breaks.mjs";
 
 // https://astro.build/config
 export default defineConfig({
@@ -106,6 +107,7 @@ export default defineConfig({
 	],
 	markdown: {
 		remarkPlugins: [
+			remarkJournalBreaks,
 			remarkMath,
 			remarkReadingTime,
 			remarkExcerpt,
