@@ -4,6 +4,8 @@
 
 2026-10-15：现有服务已接入 `zuige-blog-media` R2 标准存储桶，绑定为 `BUCKET`。管理入口与两个现有 Secrets 沿用原配置；维护此项目不需要重新创建数据库或重新签发入口。
 
+2026-10-17：部分网络不能连接现有 `workers.dev` 图片入口。已启用 R2 托管公开地址作为过渡的图片读取入口，网页通过 `src/data/services.json` 的 `mediaBase` 映射旧媒体链接；`apiBase`、原图文件、文章中保存的地址和私密管理入口保持不变。`r2.dev` 是官方限流的开发入口，不应视作长期生产域名；后续绑定自有媒体域名后，只需更换 `mediaBase`。公开地址不提供存储桶目录列表，原图本身仍是公开媒体。官方说明：https://developers.cloudflare.com/r2/buckets/public-buckets/ 。
+
 ## 首次接入
 
 1. 在 https://dash.cloudflare.com/sign-up 注册，验证邮箱，登录。博客已有 GitHub 地址，可以跳过添加域名。

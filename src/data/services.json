@@ -1,3 +1,4 @@
 {
-  "apiBase": "https://zuige-blog-service.zuige-blog-service.workers.dev"
+  "apiBase": "https://zuige-blog-service.zuige-blog-service.workers.dev",
+  "mediaBase": "https://pub-e021279c96324455b70a629e21c890ff.r2.dev"
 }

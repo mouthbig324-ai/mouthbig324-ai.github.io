@@ -1,4 +1,6 @@
 import MarkdownIt from "markdown-it";
+import { normalizeJournalText } from "../utils/journal-text";
+import { publicMediaUrl } from "../utils/media-utils";
 
 export type ComposerPhoto = { src: string; alt: string; width: number; height: number; thumbnail?: string; title?: string };
 type TextBlock = { id: string; kind: "text"; text: string };
@@ -21,6 +23,7 @@ export class RecordComposer {
   }
 
   setBody(body: string, photos: ComposerPhoto[]) {
+    body = normalizeJournalText(body);
     this.blocks = [];
     const lines = body.split("\n");
     const tokens = markdown.parse(body, {});
@@ -86,7 +89,7 @@ export class RecordComposer {
   }
 
   private sync() {
-    this.source.value = this.blocks.map(block => block.kind === "text" ? block.text : photoMarkdown(block.photo)).filter(Boolean).join("\n\n");
+    this.source.value = normalizeJournalText(this.blocks.map(block => block.kind === "text" ? block.text : photoMarkdown(block.photo)).filter(Boolean).join("\n\n"));
   }
 
   private mergeText() {
@@ -120,7 +123,7 @@ export class RecordComposer {
         for (const event of ["focus", "click", "keyup", "select", "blur"]) control.addEventListener(event, remember);
         wrapper.append(control); requestAnimationFrame(resize);
       } else {
-        const image = document.createElement("img"); image.src = block.photo.src; image.alt = block.photo.alt || "正文照片"; if (block.photo.title) image.title = block.photo.title;
+        const image = document.createElement("img"); image.src = publicMediaUrl(block.photo.src); image.alt = block.photo.alt || "正文照片"; if (block.photo.title) image.title = block.photo.title;
         const caption = document.createElement("input"); caption.value = block.photo.alt; caption.maxLength = 300; caption.placeholder = "照片说明（可选）"; caption.setAttribute("aria-label", "正文照片说明"); caption.disabled = this.disabled;
         caption.addEventListener("input", () => { block.photo.alt = caption.value; image.alt = caption.value; this.sync(); this.callbacks.photoChanged(block.photo.src, caption.value); });
         const actions = document.createElement("div"); actions.className = "composer-photo-actions";

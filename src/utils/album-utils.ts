@@ -1,5 +1,6 @@
 import { z } from "astro:content";
 import { url } from "./url-utils";
+import { publicMediaUrl } from "./media-utils";
 
 const mediaSource = z.string().refine(value => /^https:\/\//.test(value) || /^\/(?!\/)/.test(value), "照片地址须为 HTTPS 地址或以 / 开头的站内路径");
 const albumSchema = z.object({
@@ -25,5 +26,5 @@ export function getAlbums() {
 }
 
 export function mediaUrl(source: string) {
-  return source.startsWith("https://") ? source : url(source);
+  return source.startsWith("https://") ? publicMediaUrl(source) : url(source);
 }

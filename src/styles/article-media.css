@@ -1,0 +1,44 @@
+/* Give journal photos breathing room while keeping their original files. */
+.custom-md img,
+#preview #preview-body img,
+#body-editor .composer-photo > img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: min(84%, 720px);
+    max-height: min(75vh, 840px);
+    margin: 1.75rem auto;
+    object-fit: contain;
+    border-radius: 0.75rem;
+}
+
+/* PhotoGallery is used for journal attachments, separate from album grids. */
+.journal-gallery-single {
+    width: 84%;
+    max-width: 720px;
+    margin-inline: auto;
+}
+
+.journal-gallery-single img {
+    display: block;
+    width: auto;
+    height: auto;
+    max-width: 100%;
+    max-height: min(75vh, 840px);
+    margin-inline: auto;
+    object-fit: contain;
+    border-radius: 0.75rem;
+}
+
+@media (max-width: 767px) {
+    .custom-md img,
+    #preview #preview-body img,
+    #body-editor .composer-photo > img {
+        max-width: 92%;
+        margin-block: 1.5rem;
+    }
+
+    .journal-gallery-single {
+        width: 92%;
+    }
+}

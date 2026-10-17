@@ -1,6 +1,7 @@
 import MarkdownIt from "markdown-it";
 import { RecordComposer } from "./record-composer";
 import { unplacedMedia } from "../utils/inline-media-utils";
+import { publicMediaUrl } from "../utils/media-utils";
 type Photo = { src: string; thumbnail?: string; alt: string; width: number; height: number };
 type Video = { src: string; caption: string };
 type Friend = { name: string; url: string; description: string; note?: string };
@@ -89,7 +90,7 @@ function renderMedia() {
   const list = $("media-list"); list.replaceChildren();
   photoItems.forEach((photo, index) => {
     const card = document.createElement("div"); card.className = "media-item";
-    const image = document.createElement("img"); image.src = photo.thumbnail || photo.src; image.alt = photo.alt;
+    const image = document.createElement("img"); image.src = publicMediaUrl(photo.thumbnail || photo.src); image.alt = photo.alt;
     const caption = document.createElement("input"); caption.placeholder = "照片说明（可选）"; caption.value = photo.alt; caption.maxLength = 300; caption.disabled = busy; caption.addEventListener("input", () => { photo.alt = caption.value; recordComposer.updatePhotoAlt(photo.src, caption.value); });
     const controls = document.createElement("div"); controls.className = "media-controls";
     if (mode === "post") { const insert = document.createElement("button"); insert.type = "button"; insert.textContent = recordComposer.hasPhoto(photo.src) ? "再次插入正文" : "插入正文"; insert.disabled = busy; insert.addEventListener("click", () => { recordComposer.insertPhoto(photo); renderMedia(); }); controls.append(insert); }
@@ -97,7 +98,7 @@ function renderMedia() {
     card.append(image, caption, controls); list.append(card);
   });
   videoItems.forEach((video, index) => {
-    const card = document.createElement("div"); card.className = "media-item"; const player = document.createElement("video"); player.src = video.src; player.controls = true; player.preload = "metadata";
+    const card = document.createElement("div"); card.className = "media-item"; const player = document.createElement("video"); player.src = publicMediaUrl(video.src); player.controls = true; player.preload = "metadata";
     const caption = document.createElement("input"); caption.placeholder = "视频说明（可选）"; caption.value = video.caption; caption.disabled = busy; caption.addEventListener("input", () => { video.caption = caption.value; });
     const button = document.createElement("button"); button.textContent = "移除"; button.type = "button"; button.disabled = busy; button.addEventListener("click", () => { videoItems.splice(index, 1); renderMedia(); }); card.append(player, caption, button); list.append(card);
   });
@@ -140,10 +141,11 @@ async function save(draft: boolean) {
 $("record-form").addEventListener("submit", event => { event.preventDefault(); void save(false); }); $("save-draft").addEventListener("click", () => { void save(true); });
 $("preview-toggle").addEventListener("click", () => {
   $("preview").hidden = !$("preview").hidden; $("preview-title").textContent = value("record-title"); $("preview-body").innerHTML = parser.render(mode === "album" ? value("description") : value("record-body"));
+  for (const image of $("preview-body").querySelectorAll<HTMLImageElement>("img")) image.src = publicMediaUrl(image.getAttribute("src") || "");
   const target = $("preview-media"); target.replaceChildren();
   const attachments = mode === "album" ? { photos: photoItems, videos: videoItems } : unplacedMedia(value("record-body"), photoItems, videoItems);
-  for (const photo of attachments.photos) { const image = document.createElement("img"); image.src = photo.thumbnail || photo.src; image.alt = photo.alt; image.style.width = "100%"; image.style.borderRadius = "10px"; target.append(image); }
-  for (const video of attachments.videos) { const player = document.createElement("video"); player.src = video.src; player.controls = true; player.style.width = "100%"; target.append(player); }
+  for (const photo of attachments.photos) { const image = document.createElement("img"); image.src = publicMediaUrl(photo.thumbnail || photo.src); image.alt = photo.alt; image.style.width = "100%"; image.style.borderRadius = "10px"; target.append(image); }
+  for (const video of attachments.videos) { const player = document.createElement("video"); player.src = publicMediaUrl(video.src); player.controls = true; player.style.width = "100%"; target.append(player); }
   if (!$("preview").hidden) $("preview").scrollIntoView({ behavior: "smooth", block: "start" });
 });
 async function loadFriends() { try { const data = await request("/admin/record?kind=friends&id=friends"); friendItems = data.meta; friendSha = data.sha; renderFriends(); } catch (error) { status("friends-status", message(error), true); } }
