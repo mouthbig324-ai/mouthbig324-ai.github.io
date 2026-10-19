@@ -1,0 +1,18 @@
+---
+import MainGridLayout from "../../layouts/MainGridLayout.astro";
+import JournalHeader from "../../components/JournalHeader.astro";
+import { getTravelSeries } from "../../utils/travel-series";
+import { url } from "../../utils/url-utils";
+export async function getStaticPaths() { return (await getTravelSeries()).map(trip => ({ params: { slug: trip.slug }, props: { trip } })); }
+const { trip } = Astro.props;
+---
+<MainGridLayout title={trip.name} description={`这趟旅行的日记与相册：${trip.locations.join("、")}`}>
+  <JournalHeader title={trip.name} description={trip.locations.join(" · ")} eyebrow={`${trip.start}${trip.start !== trip.end ? ` — ${trip.end}` : ""} · ${trip.entries.length} 条记录`} />
+  <ol class="card-base px-6 md:px-9 py-4 mb-4 divide-y divide-[var(--line-divider)]">
+    {trip.entries.map((entry, index) => <li class="py-5"><a class="block group" href={entry.href}>
+      <p class="text-sm text-50 mb-2">{entry.date} · {entry.kind === "album" ? "相册" : "日记"}{entry.location && ` · ${entry.location}`}</p>
+      <h2 class="text-xl font-bold text-90 group-hover:text-[var(--primary)] break-words"><span class="text-[var(--primary)] mr-2">{String(index + 1).padStart(2, "0")}</span>{entry.title} →</h2>
+    </a></li>)}
+  </ol>
+  <a class="btn-regular rounded-xl px-5 py-3 inline-flex" href={url("/series/")}>← 全部旅行系列</a>
+</MainGridLayout>

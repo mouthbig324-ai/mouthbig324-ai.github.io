@@ -7,6 +7,10 @@ const albumSchema = z.object({
   title: z.string(),
   date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   description: z.string().default(""),
+  series: z.string().max(80).default(""),
+  tripDate: z.string().default(""),
+  location: z.string().max(80).default(""),
+  seriesOrder: z.number().int().min(1).max(9999).nullable().optional(),
   draft: z.boolean().default(false),
   photos: z.array(z.object({
     src: mediaSource,

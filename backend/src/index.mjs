@@ -61,11 +61,19 @@ async function github(env, path, method = "GET", data, allow404 = false) {
 const contentRoute = path => "/contents/" + path.split("/").map(encodeURIComponent).join("/");
 function decodeContent(result) { return new TextDecoder().decode(unbase64(result.content.replace(/\s/g, ""))); }
 export function parsePost(raw) { const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/); if (!match) return { meta: {}, body: raw }; return { meta: parseYaml(match[1]) || {}, body: match[2].trim() }; }
+function travelFields(data) {
+  const series = text(data.series || "", 80, "旅行系列");
+  const tripDate = data.tripDate ? date(data.tripDate) : "";
+  const location = text(data.location || "", 80, "地点");
+  const seriesOrder = data.seriesOrder ?? null;
+  if (seriesOrder !== null && (!Number.isInteger(seriesOrder) || seriesOrder < 1 || seriesOrder > 9999)) fail(400, "系列顺序请填写 1 到 9999 的整数。");
+  return { series, tripDate, location, seriesOrder };
+}
 export function postContent(data) {
   const title = text(data.title, 160, "标题", true); const published = date(data.date);
   const category = data.category === "" || data.category === "无" ? "" : ["生活碎片", "旅行日记", "日常"].includes(data.category) ? data.category : "生活碎片";
   const tags = Array.isArray(data.tags) ? data.tags.slice(0, 20).map(tag => text(tag, 40, "标签", true)) : [];
-  const meta = { title, published, updated: new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date()), description: text(data.description || "", 500, "摘要"), image: data.image ? source(data.image) : "", tags, category, draft: data.draft === true, featured: data.featured === true, photos: photos(data.photos || []), videos: videos(data.videos || []), lang: "zh_CN" };
+  const meta = { title, published, ...travelFields(data), updated: new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date()), description: text(data.description || "", 500, "摘要"), image: data.image ? source(data.image) : "", tags, category, draft: data.draft === true, featured: data.featured === true, photos: photos(data.photos || []), videos: videos(data.videos || []), lang: "zh_CN" };
   return "---\n" + Object.entries(meta).map(([key, value]) => `${key}: ${key === "published" || key === "updated" ? value : JSON.stringify(value)}`).join("\n") + "\n---\n\n" + text(data.body || "", 200000, "正文") + "\n";
 }
 async function listRecords(env, kind) {
@@ -96,15 +104,21 @@ async function readRecord(env, kind, id) {
 }
 async function saveRecord(env, data) {
   const { kind } = data; const id = kind === "friends" ? "friends" : slug(data.id); const path = recordPath(kind, id);
+  const existing = await github(env, contentRoute(path) + "?ref=main", "GET", undefined, true);
+  if ((existing?.sha || "") !== (data.sha || "")) fail(409, "这条记录已经变化，请重新打开后再保存，避免覆盖内容。");
+  if (existing && (kind === "post" || kind === "album")) {
+    const previous = kind === "post" ? parsePost(decodeContent(existing)).meta : JSON.parse(decodeContent(existing));
+    for (const field of ["series", "tripDate", "location", "seriesOrder"]) {
+      if (!Object.hasOwn(data, field) && Object.hasOwn(previous, field)) data[field] = previous[field];
+    }
+  }
   let raw;
   if (kind === "post") raw = postContent(data);
-  else if (kind === "album") raw = JSON.stringify({ title: text(data.title, 160, "相册名称", true), date: date(data.date), description: text(data.description || "", 2000, "相册简介"), draft: data.draft === true, photos: photos(data.photos || []) }, null, 2) + "\n";
+  else if (kind === "album") raw = JSON.stringify({ ...travelFields(data), title: text(data.title, 160, "相册名称", true), date: date(data.date), description: text(data.description || "", 2000, "相册简介"), draft: data.draft === true, photos: photos(data.photos || []) }, null, 2) + "\n";
   else {
     if (!Array.isArray(data.items) || data.items.length > 100) fail(400, "友链格式不正确。");
     raw = JSON.stringify(data.items.map(friend => ({ name: text(friend.name, 80, "网站名称", true), url: httpsUrl(text(friend.url, 2000, "网站地址", true)), description: text(friend.description || "", 250, "简介"), note: text(friend.note || "", 250, "备注") })), null, 2) + "\n";
   }
-  const existing = await github(env, contentRoute(path) + "?ref=main", "GET", undefined, true);
-  if ((existing?.sha || "") !== (data.sha || "")) fail(409, "这条记录已经变化，请重新打开后再保存，避免覆盖内容。");
   const result = await github(env, contentRoute(path), "PUT", { message: `${data.draft ? "Save draft" : "Publish"} ${kind}: ${id}`, content: b64(encoder.encode(raw)), branch: "main", ...(existing ? { sha: existing.sha } : {}) });
   await indexRecord(env, kind, id, data).catch(() => {});
   return { id, sha: result.content.sha, commit: result.commit.sha, draft: data.draft === true, url: kind === "post" ? `${env.BLOG_ORIGIN}/posts/${id}/` : kind === "album" ? `${env.BLOG_ORIGIN}/albums/${id}/` : `${env.BLOG_ORIGIN}/friends/` };

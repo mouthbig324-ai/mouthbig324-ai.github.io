@@ -1,3 +1,5 @@
+import { setupDraftRecovery } from "./editor-drafts";
+import type { LocalRecord } from "./local-drafts";
 import MarkdownIt from "markdown-it";
 import { emojiPicker } from "./emoji-picker";
 import { RecordComposer } from "./record-composer";
@@ -34,7 +36,7 @@ async function request(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers); if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(api + path, { ...options, headers }); const data = await response.json();
   if (response.status === 401) { token = ""; localStorage.removeItem(tokenKey); showLogin(); }
-  if (!response.ok) throw new Error(data.error || "操作未完成，请稍后再试。"); return data;
+  if (!response.ok) throw Object.assign(new Error(data.error || "操作未完成，请稍后再试。"), { status: response.status }); return data;
 }
 const send = (path: string, data: unknown) => request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
 function showLogin() { $("login-panel").hidden = false; $("editor-panel").hidden = true; $("logout").hidden = true; }
@@ -47,11 +49,12 @@ async function showEditor() {
   $("login-panel").hidden = true; $("editor-panel").hidden = false; $("logout").hidden = false;
   await selectMode("post");
 }
-$("logout").addEventListener("click", () => { token = ""; localStorage.removeItem(tokenKey); showLogin(); });
+$("logout").addEventListener("click", () => { if (busy || !draftRecovery.leave()) return; draftRecovery.suspend(); token = ""; localStorage.removeItem(tokenKey); showLogin(); });
 const message = (error: unknown) => error instanceof Error ? error.message : "操作未完成，请稍后再试。";
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-mode]")) button.addEventListener("click", () => { selectMode(button.dataset.mode!).catch(error => status("save-status", message(error), true)); });
 async function selectMode(next: string) {
-  if (busy) return;
+  if (busy || !draftRecovery.leave()) return;
+  draftRecovery.suspend();
   busy = true; setBusy(true);
   try {
   mode = next; for (const button of document.querySelectorAll<HTMLElement>("[data-mode]")) button.classList.toggle("active", button.dataset.mode === mode);
@@ -66,9 +69,9 @@ async function selectMode(next: string) {
 }
 function reset() {
   id = `${mode}-${today().replaceAll("-", "")}-${crypto.randomUUID().slice(0, 6)}`; sha = ""; cover = ""; photoItems = []; videoItems = [];
-  $<HTMLFormElement>("record-form").reset(); recordComposer.setBody("", []); input("record-date").value = today(); $("preview").hidden = true; status("save-status", ""); status("upload-status", ""); renderMedia();
+  $<HTMLFormElement>("record-form").reset(); recordComposer.setBody("", []); input("record-date").value = today(); $("preview").hidden = true; status("save-status", ""); status("upload-status", ""); renderMedia(); draftRecovery.begin();
 }
-$("new-record").addEventListener("click", reset);
+$("new-record").addEventListener("click", () => { if (!busy && draftRecovery.leave()) reset(); });
 async function loadRecords() {
   const list = $("record-list"); list.textContent = "正在加载记录…";
   try {
@@ -78,12 +81,14 @@ async function loadRecords() {
   } catch (error) { list.textContent = message(error); }
 }
 async function openRecord(key: string) {
-  if (busy) return; busy = true; setBusy(true);
+  if (busy || !draftRecovery.leave()) return; busy = true; setBusy(true);
   try {
   const data = await request(`/admin/record?kind=${mode}&id=${encodeURIComponent(key)}`); reset(); id = data.id; sha = data.sha;
   const meta = data.meta; input("record-title").value = meta.title || ""; input("record-date").value = String(mode === "album" ? meta.date : meta.published).slice(0, 10); $<HTMLTextAreaElement>("description").value = meta.description || "";
   $<HTMLTextAreaElement>("record-body").value = data.body || ""; $<HTMLSelectElement>("category").value = meta.category || ""; input("featured").checked = !!meta.featured;
   input("tags").value = (meta.tags || []).join("、"); photoItems = meta.photos || []; videoItems = meta.videos || []; cover = meta.image || ""; recordComposer.setBody(data.body || "", photoItems); renderMedia();
+  for (const field of ["series", "tripDate", "location", "seriesOrder"]) input(field).value = String(meta[field] ?? "");
+  draftRecovery.begin();
   status("save-status", meta.draft ? "这条记录目前是草稿。" : "这条记录已发布。");
   } finally { busy = false; setBusy(false); }
 }
@@ -121,7 +126,7 @@ input("media-files").addEventListener("change", async () => {
       const file = files[index]; status("upload-status", `正在处理 ${index + 1}/${files.length}：${file.name}`);
       if (file.type.startsWith("image/")) { if (file.size > 64 * 1024 * 1024) throw new Error("照片超过64 MB，请选择较小的原图。"); const dimensions = await photoDimensions(file); const saved = await upload(file, dimensions.width, dimensions.height); const photo = { src: saved.src, alt: "", width: saved.width, height: saved.height }; photoItems.push(photo); if (mode === "post") recordComposer.insertPhoto(photo); }
       else { if (mode === "album") throw new Error("相册目前收录照片，视频请放入日记或生活碎片。"); if (file.size > 64 * 1024 * 1024) throw new Error("视频超过64 MB，请先压缩或使用已有视频链接。"); const saved = await upload(file); videoItems.push({ src: saved.src, caption: "" }); }
-      renderMedia();
+      renderMedia(); draftRecovery.flush();
     }
     status("upload-status", "已上传，准备好后可以保存草稿或发布。");
   } catch (error) { status("upload-status", message(error), true); }
@@ -132,11 +137,12 @@ function setBusy(state: boolean) { for (const control of document.querySelectorA
 async function save(draft: boolean) {
   if (busy || !$<HTMLFormElement>("record-form").reportValidity()) return; busy = true; setBusy(true); status("save-status", "正在保存…");
   try {
-    const result = await send("/admin/record", { kind: mode, id, sha, title: value("record-title"), date: value("record-date"), description: value("description"), body: value("record-body"), category: value("category"), tags: value("tags").split(/[,，、]/).map(tag => tag.trim()).filter(Boolean), image: cover, draft, featured: input("featured").checked, photos: photoItems, videos: videoItems });
-    sha = result.sha; status("save-status", draft ? "草稿已保存。" : "已提交发布，网站正在自动更新。");
+    draftRecovery.flush();
+    const result = await send("/admin/record", { ...captureRecord(), draft });
+    sha = result.sha; draftRecovery.saved(); status("save-status", draft ? "草稿已保存。" : "已提交发布，网站正在自动更新。");
     if (!draft) { const link = document.createElement("a"); link.href = result.url; link.target = "_blank"; link.rel = "noopener"; link.textContent = " 查看记录 ↗"; $("save-status").append(link); }
     await loadRecords();
-  } catch (error) { status("save-status", message(error), true); }
+  } catch (error) { draftRecovery.flush(); status("save-status", message(error), true); if ((error as { status?: number }).status === 409) await draftRecovery.showConflict(); }
   finally { busy = false; setBusy(false); }
 }
 $("record-form").addEventListener("submit", event => { event.preventDefault(); void save(false); }); $("save-draft").addEventListener("click", () => { void save(true); });
@@ -198,6 +204,26 @@ async function loadComments() {
     }
   } catch (error) { list.textContent = message(error); }
 }
+function captureRecord(): LocalRecord {
+  return { kind: mode, id, sha, title: value("record-title"), date: value("record-date"), description: value("description"), body: value("record-body"), category: value("category"), tags: value("tags").split(/[,，、]/).map(tag => tag.trim()).filter(Boolean), image: cover, featured: input("featured").checked, photos: photoItems, videos: videoItems, series: value("series").trim(), tripDate: value("tripDate"), location: value("location"), seriesOrder: value("seriesOrder") ? Number(value("seriesOrder")) : null };
+}
+const draftRecovery = setupDraftRecovery({
+  capture: captureRecord,
+  isBusy: () => busy,
+  latest: record => request("/admin/record?kind=" + record.kind + "&id=" + encodeURIComponent(record.id)),
+  copyAsNew() { id = mode + "-" + today().replaceAll("-", "") + "-" + crypto.randomUUID().slice(0, 6); sha = ""; },
+  async restore(record) {
+    await selectMode(record.kind);
+    mode = record.kind; id = record.id; sha = record.sha;
+    input("record-title").value = record.title; input("record-date").value = record.date;
+    $<HTMLTextAreaElement>("description").value = record.description;
+    $<HTMLSelectElement>("category").value = record.category;
+    input("tags").value = record.tags.join("、"); input("featured").checked = record.featured;
+    for (const field of ["series", "tripDate", "location", "seriesOrder"] as const) input(field).value = String(record[field] ?? "");
+    cover = record.image; photoItems = record.photos; videoItems = record.videos || [];
+    recordComposer.setBody(record.body, photoItems); renderMedia();
+  },
+});
 if (!api) { status("login-status", "管理服务还未连接。完成账户接入后，即可开始记录。"); }
 else if (token) showEditor().catch(error => { showLogin(); status("login-status", message(error), true); });
 window.addEventListener("hashchange", () => {

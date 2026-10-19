@@ -4,6 +4,7 @@ import JournalHeader from "../../components/JournalHeader.astro";
 import { getAlbums, mediaUrl } from "../../utils/album-utils";
 import { url } from "../../utils/url-utils";
 import Comments from "../../components/Comments.astro";
+import TravelSeriesNav from "../../components/TravelSeriesNav.astro";
 export function getStaticPaths() { return getAlbums().map(album => ({ params: { slug: album.slug }, props: { album } })); }
 const { album } = Astro.props;
 ---
@@ -16,6 +17,7 @@ const { album } = Astro.props;
       </a>)}
     </div>
   </div>
+  <TravelSeriesNav name={album.series} kind="album" slug={album.slug} />
   <a class="btn-regular rounded-xl px-5 py-3 inline-flex" href={url("/albums/")}>← 返回相册</a>
   <Comments path={`/albums/${album.slug}/`} />
 </MainGridLayout>

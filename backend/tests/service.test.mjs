@@ -156,6 +156,35 @@ test("stale editors and unsafe file paths cannot overwrite records", async () =>
   assert.equal((await call("/admin/record", { auth: true, data: post({ id: "../../config" }) })).status, 400);
   assert.equal((await call("/admin/record", { auth: true, data: post({ id: "invalid-date", date: "2026-02-30" }) })).status, 400);
 });
+test("travel series fields round-trip for posts and albums and survive older editors", async () => {
+  for (const kind of ["post", "album"]) {
+    const id = `series-${kind}`;
+    const fields = { series: "国庆之旅 / 杭州", tripDate: "2026-10-01", location: "西湖", seriesOrder: 2 };
+    const data = post({ kind, id, ...fields });
+    const created = await call("/admin/record", { auth: true, data });
+    assert.equal(created.status, 200);
+    let saved = await created.json();
+    const read = () => call(`/admin/record?kind=${kind}&id=${id}`, { auth: true }).then(response => response.json());
+    for (const [field, value] of Object.entries(fields)) assert.equal((await read()).meta[field], value);
+    // A device with an older cached editor omits these fields instead of clearing them.
+    const older = await call("/admin/record", { auth: true, data: post({ kind, id, sha: saved.sha }) });
+    assert.equal(older.status, 200); saved = await older.json();
+    for (const [field, value] of Object.entries(fields)) assert.equal((await read()).meta[field], value);
+    const cleared = await call("/admin/record", { auth: true, data: post({ kind, id, sha: saved.sha, series: "", tripDate: "", location: "", seriesOrder: null }) });
+    assert.equal(cleared.status, 200);
+    assert.equal((await read()).meta.series, "");
+    assert.equal((await read()).meta.seriesOrder, null);
+  }
+});
+test("invalid travel dates, series lengths and order numbers cannot be published", async () => {
+  const before = writes.length;
+  for (const kind of ["post", "album"]) {
+    for (const fields of [{ tripDate: "2026-02-30" }, { series: "长".repeat(81) }, { location: "长".repeat(81) }, { seriesOrder: -1 }, { seriesOrder: 1.5 }, { seriesOrder: "2" }, { seriesOrder: 10000 }]) {
+      assert.equal((await call("/admin/record", { auth: true, data: post({ kind, id: "invalid-series", ...fields }) })).status, 400);
+    }
+  }
+  assert.equal(writes.length, before);
+});
 test("daily and uncategorized records retain their category through saving and editing", async () => {
   for (const [index, category] of ["日常", ""].entries()) {
     const id = `test-category-${index}`;

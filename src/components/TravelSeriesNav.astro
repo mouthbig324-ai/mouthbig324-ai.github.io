@@ -1,0 +1,24 @@
+---
+import { getTravelSeries } from "../utils/travel-series";
+interface Props { name: string; kind: "post" | "album"; slug: string }
+const { name, kind, slug } = Astro.props;
+const trip = name ? (await getTravelSeries()).find(item => item.name === name.trim()) : undefined;
+const siblings = trip?.entries.filter(item => item.kind === kind) || [];
+const index = siblings.findIndex(item => item.slug === slug);
+const previous = index > 0 ? siblings[index - 1] : undefined;
+const next = index >= 0 ? siblings[index + 1] : undefined;
+const current = trip?.entries.find(item => item.kind === kind && item.slug === slug);
+---
+{trip && <nav class="card-base p-6 md:px-9 mb-4" aria-label="旅行系列导航" data-pagefind-ignore>
+  <p class="text-sm text-50 mb-2">旅行系列{current?.location && ` · ${current.location}`}{current?.date && ` · ${current.date}`}</p>
+  <a class="text-xl font-bold text-[var(--primary)] break-words" href={trip.href}>{trip.name} →</a>
+  <details class="mt-4 text-75"><summary class="cursor-pointer">本次旅行目录 · {trip.entries.length} 条记录</summary>
+    <ol class="mt-3 space-y-3">
+      {trip.entries.map(item => <li><a href={item.href} class="hover:text-[var(--primary)] break-words" aria-current={item.kind === kind && item.slug === slug ? "page" : undefined}>{item.kind === "album" ? "相册" : "日记"} · {item.title}</a></li>)}
+    </ol>
+  </details>
+  {(previous || next) && <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-5 pt-4 border-t border-[var(--line-divider)] text-75">
+    {previous ? <a class="break-words hover:text-[var(--primary)]" href={previous.href}>← {kind === "post" ? "上一篇" : "上一本相册"}：{previous.title}</a> : <span />}
+    {next && <a class="break-words md:text-right hover:text-[var(--primary)]" href={next.href}>{kind === "post" ? "下一篇" : "下一本相册"}：{next.title} →</a>}
+  </div>}
+</nav>}

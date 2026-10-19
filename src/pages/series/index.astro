@@ -1,0 +1,14 @@
+---
+import MainGridLayout from "../../layouts/MainGridLayout.astro";
+import JournalHeader from "../../components/JournalHeader.astro";
+import TravelSeriesCards from "../../components/TravelSeriesCards.astro";
+import { getTravelSeries } from "../../utils/travel-series";
+import { url } from "../../utils/url-utils";
+const series = await getTravelSeries();
+---
+<MainGridLayout title="旅行系列" description="把同一趟旅行的日记和相册，收进一段完整的回忆。">
+  <JournalHeader title="旅行系列" description="一趟旅行，一串回忆。沿着文字和照片，再走一遍。" />
+  <TravelSeriesCards series={series} />
+  {series.length === 0 && <div class="card-base px-6 py-12 text-center mb-4"><p class="text-90 text-xl mb-3">旅途的篇章，慢慢串起来。</p><p class="text-50">旅行系列正在整理中，先去看看已经留下的日记吧。</p></div>}
+  <a class="btn-regular rounded-xl px-5 py-3 inline-flex" href={url("/travel/")}>← 查看旅行日记</a>
+</MainGridLayout>

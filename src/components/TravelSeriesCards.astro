@@ -1,0 +1,13 @@
+---
+import type { TravelSeries } from "../utils/travel-series";
+interface Props { series: TravelSeries[] }
+const { series } = Astro.props;
+---
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+  {series.map(trip => <a href={trip.href} class="card-base p-6 block group">
+    <p class="text-sm text-50 mb-2">{trip.start}{trip.start !== trip.end && ` — ${trip.end}`}</p>
+    <h2 class="text-xl font-bold text-90 group-hover:text-[var(--primary)] transition break-words">{trip.name}</h2>
+    {trip.locations.length > 0 && <p class="text-75 mt-2 break-words">{trip.locations.join(" · ")}</p>}
+    <p class="text-sm text-50 mt-3">{trip.entries.filter(item => item.kind === "post").length} 篇日记 · {trip.entries.filter(item => item.kind === "album").length} 本相册 <span class="text-[var(--primary)]">查看旅程 →</span></p>
+  </a>)}
+</div>

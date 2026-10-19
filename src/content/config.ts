@@ -11,6 +11,10 @@ const postsCollection = defineCollection({
 		tags: z.array(z.string()).optional().default([]),
 		category: z.string().optional().nullable().default(""),
 		lang: z.string().optional().default(""),
+		series: z.string().max(80).default(""),
+		tripDate: z.string().default(""),
+		location: z.string().max(80).default(""),
+		seriesOrder: z.number().int().min(1).max(9999).nullable().optional(),
 		featured: z.boolean().optional().default(false),
 		photos: z.array(z.object({
 			src: z.string(),
