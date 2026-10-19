@@ -1,0 +1,18 @@
+{
+  "sunset": {
+    "id": "fb574311-df06-4dad-a4e7-2ed75201c6b6",
+    "src": "https://zuige-blog-service.zuige-blog-service.workers.dev/media/2026/10/fb574311-df06-4dad-a4e7-2ed75201c6b6.png",
+    "type": "image/png",
+    "size": 2710188,
+    "width": 1448,
+    "height": 1086
+  },
+  "wetland": {
+    "id": "0e729997-cc12-458a-8cd6-f5e4530b374f",
+    "src": "https://zuige-blog-service.zuige-blog-service.workers.dev/media/2026/10/0e729997-cc12-458a-8cd6-f5e4530b374f.jpg",
+    "type": "image/jpeg",
+    "size": 1205666,
+    "width": 1279,
+    "height": 1706
+  }
+}

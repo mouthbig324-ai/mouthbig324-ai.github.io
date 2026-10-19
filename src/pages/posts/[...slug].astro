@@ -77,16 +77,7 @@ const jsonLd = {
 
             <!-- title -->
             <div class="relative onload-animation">
-                <div
-                    data-pagefind-body data-pagefind-weight="10" data-pagefind-meta="title"
-                    class="transition w-full block font-bold mb-3
-                    text-3xl md:text-[2.25rem]/[2.75rem]
-                    text-black/90 dark:text-white/90
-                    md:before:w-1 before:h-5 before:rounded-md before:bg-[var(--primary)]
-                    before:absolute before:top-[0.75rem] before:left-[-1.125rem]
-                ">
-                    {entry.data.title}
-                </div>
+                <h1 data-pagefind-body data-pagefind-weight="10" data-pagefind-meta="title" class="journal-article-title">{entry.data.title}</h1>
             </div>
 
             <!-- metadata -->
@@ -109,6 +100,7 @@ const jsonLd = {
             }
 
 
+            {headings.length > 0 && <details class="journal-inline-toc"><summary>本篇目录</summary><nav aria-label="本篇目录">{headings.filter(h => h.depth <= Math.min(...headings.map(item => item.depth)) + 1).map(h => <a href={"#" + h.slug}>{h.text}</a>)}</nav></details>}
             <Markdown class="mb-6 markdown-content onload-animation">
                 <Content />
             </Markdown>

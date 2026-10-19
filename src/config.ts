@@ -12,11 +12,11 @@ export const siteConfig: SiteConfig = {
 	subtitle: "旅行、影像与生活碎片",
 	lang: "zh_CN",
 	themeColor: {
-		hue: 210,
-		fixed: false, // Hide the theme color picker for visitors
+		hue: 145,
+		fixed: true, // Hide the theme color picker for visitors
 	},
 	banner: {
-		enable: true,
+		enable: false,
 		src: "assets/images/graffiti-banner.png",
 		position: "50% 40%",
 		credit: {
@@ -29,7 +29,7 @@ export const siteConfig: SiteConfig = {
 		enable: true, // Display the table of contents on the right side of the post
 		depth: 2, // Maximum heading depth to show in the table, from 1 to 3
 	},
-	favicon: [{ src: "/favicon-graffiti.png", sizes: "128x128" },
+	favicon: [{ src: "/favicon-journal.svg", sizes: "any" },
 		// Leave this array empty to use the default favicon
 		// {
 		//   src: '/favicon/icon.png',    // Path of the favicon, relative to the /public directory

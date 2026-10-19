@@ -1,0 +1,26 @@
+---
+import { publicMediaUrl } from "../utils/media-utils";
+import { url } from "../utils/url-utils";
+import photos from "../data/home-photos.json";
+const sunset = publicMediaUrl(photos.sunset.src);
+const wetland = publicMediaUrl(photos.wetland.src);
+---
+<section class="journal-hero" aria-labelledby="home-title">
+  <div class="journal-hero-copy">
+    <p class="journal-eyebrow">嘴哥的个人手记 <span aria-hidden="true">/</span> A PERSONAL JOURNAL</p>
+    <h1 id="home-title">把日子，<br />写成自己的<span>篇章。</span></h1>
+    <p class="journal-hero-intro">记下走过的山海，留住生活的片刻。<br />也把学习路上，慢慢长出的想法写在这里。</p>
+    <a class="journal-text-link" href="#latest">翻开最近的记录 <span aria-hidden="true">↓</span></a>
+    <div class="journal-hero-footnote"><span class="journal-seed" aria-hidden="true">✳</span><span>不急着抵达，先认真感受。</span></div>
+  </div>
+  <div class="journal-photo-composition">
+    <figure class="journal-sunset"><img src={sunset} width={photos.sunset.width} height={photos.sunset.height} alt="晚霞染暖天空，远山在山谷间层层展开" fetchpriority="high" decoding="async" /><figcaption>山间晚霞 <span>光落下来的时候</span></figcaption></figure>
+    <figure class="journal-wetland"><img src={wetland} width={photos.wetland.width} height={photos.wetland.height} alt="暖色天空下，潮水蜿蜒穿过红色滩涂" decoding="async" /><figcaption>滩涂上的一抹红</figcaption></figure>
+    <span class="journal-photo-note" aria-hidden="true">光影 · 山海 · 日常</span>
+  </div>
+</section>
+<nav class="journal-index" aria-label="内容索引">
+  <a href={url("travel/")}><span class="journal-index-no">01</span><span>走过的地方<small>旅行日记</small></span><span aria-hidden="true">↗</span></a>
+  <a href={url("moments/")}><span class="journal-index-no">02</span><span>生活的切片<small>生活碎片</small></span><span aria-hidden="true">↗</span></a>
+  <a href={url("albums/")}><span class="journal-index-no">03</span><span>把瞬间收藏<small>相册</small></span><span aria-hidden="true">↗</span></a>
+</nav>

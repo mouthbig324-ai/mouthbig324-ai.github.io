@@ -10,6 +10,7 @@ import "../styles/expressive-code.css";
 import "../styles/transition.css";
 import "../styles/scrollbar.css";
 import "../styles/photoswipe.css";
+import "../styles/editorial.css";
 
 import ConfigCarrier from "@components/ConfigCarrier.astro";
 import { profileConfig, siteConfig } from "@/config";
@@ -151,7 +152,7 @@ const bannerOffset = `${BANNER_HEIGHT_EXTEND}vh`;
 		<link rel="alternate" type="application/rss+xml" title={profileConfig.name} href={`${Astro.site}rss.xml`}/>
 
 	</head>
-	<body class=" min-h-screen transition " class:list={[{"lg:is-home": isHomePage, "enable-banner": enableBanner}]}
+	<body class="journal-site min-h-screen transition " class:list={[{"lg:is-home": isHomePage, "enable-banner": enableBanner}]}
 		  data-overlayscrollbars-initialize
 	>
 		<ConfigCarrier></ConfigCarrier>

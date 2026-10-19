@@ -4,7 +4,7 @@ import Pagination from "../components/control/Pagination.astro";
 import PostPage from "../components/PostPage.astro";
 import { PAGE_SIZE } from "../constants/constants";
 import MainGridLayout from "../layouts/MainGridLayout.astro";
-import JournalHeader from "../components/JournalHeader.astro";
+import JournalHome from "../components/JournalHome.astro";
 import { getSortedPosts } from "../utils/content-utils";
 
 export const getStaticPaths = (async ({ paginate }) => {
@@ -19,7 +19,8 @@ const len = page.data.length;
 ---
 
 <MainGridLayout>
-    {page.currentPage === 1 && <JournalHeader title="把日子，慢慢存下来。" description="旅行、影像，还有值得记住的小事。" />}
+    {page.currentPage === 1 && <JournalHome />}
+    <div id="latest" class="journal-section-heading"><div><p class="journal-eyebrow">THE LATEST ENTRIES</p><h2>最近的记录</h2></div><a href="/archive/">全部记录 ↗</a></div>
     <PostPage page={page}></PostPage>
-    <Pagination class="mx-auto onload-animation" page={page} style={`animation-delay: calc(var(--content-delay) + ${(len)*50}ms)`}></Pagination>
+    {page.lastPage > 1 && <Pagination class="mx-auto onload-animation" page={page} style={`animation-delay: calc(var(--content-delay) + ${(len)*50}ms)`}></Pagination>}
 </MainGridLayout>
