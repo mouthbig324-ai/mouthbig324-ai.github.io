@@ -3,7 +3,7 @@ import { url } from "../utils/url-utils";
 const currentYear = new Date().getFullYear();
 ---
 <footer class="journal-footer">
-  <div><a class="journal-footer-name" href={url("/")}>嘴哥</a><p>在路上，也在生活里。</p></div>
+  <p class="journal-footer-note">在路上，也在生活里。</p>
   <nav aria-label="页脚导航"><a href={url("archive/")}>全部记录</a><a href={url("series/")}>旅行系列</a><a href={url("friends/")}>友链</a><a href={url("rss.xml")}>订阅 RSS</a></nav>
   <div class="journal-credits"><p>© {currentYear} 嘴哥</p><p>Built with <a href="https://astro.build" target="_blank" rel="noopener">Astro</a> & <a href="https://github.com/saicaca/fuwari" target="_blank" rel="noopener">Fuwari</a></p><a href={url("admin/")} data-no-swup>记录管理 ↗</a></div>
 </footer>
