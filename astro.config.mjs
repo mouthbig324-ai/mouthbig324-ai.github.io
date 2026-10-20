@@ -32,6 +32,11 @@ export default defineConfig({
 	site: process.env.SITE_URL || "https://mouthbig324-ai.github.io/",
 	base: process.env.BASE_PATH || "/",
 	trailingSlash: "always",
+	// Keep each page and its styles together across Pages deployments and Swup visits.
+	// Cached HTML must not depend on CSS chunks removed by a later deployment.
+	build: {
+		inlineStylesheets: "always",
+	},
 	integrations: [
 		tailwind({
 			nesting: true,

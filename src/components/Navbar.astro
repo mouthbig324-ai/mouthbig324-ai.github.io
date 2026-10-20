@@ -94,6 +94,12 @@ function loadButtonScript() {
             }
         };
     }
+    const menuPanel = document.getElementById("nav-menu-panel");
+    menuPanel?.addEventListener("click", event => {
+        if (event.target instanceof Element && event.target.closest("a[href]")) {
+            menuPanel.classList.add("float-panel-closed");
+        }
+    });
 }
 
 loadButtonScript();
