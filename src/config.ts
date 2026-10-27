@@ -51,7 +51,7 @@ export const navBarConfig: NavBarConfig = {
 };
 
 export const profileConfig: ProfileConfig = {
-	avatar: "assets/images/graffiti-avatar.png",
+	avatar: "/avatar.webp",
 	name: "嘴哥",
 	bio: "把走过的路、看过的风景，和日常的小事，慢慢记下来。",
 	links: [

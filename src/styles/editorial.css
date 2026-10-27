@@ -33,7 +33,7 @@ body.journal-site { color: var(--journal-ink); background: var(--page-bg); font-
 .journal-header { position: relative; z-index: 50; border-bottom: 1px solid var(--journal-rule); }
 .journal-navbar-inner { min-height: 112px; gap: 24px; }
 .journal-brand { display: flex; align-items: center; gap: 16px; flex-shrink: 0; color: var(--journal-ink); font: 32px/1.2 var(--journal-serif); letter-spacing: .12em; }
-.journal-brand-mark { font: 45px/1 Georgia, serif; color: var(--primary); }
+.journal-brand-avatar { width: 44px; height: 44px; flex: 0 0 auto; border-radius: 50%; border: 1px solid var(--journal-rule); object-fit: cover; background: #f8f5ee; }
 .journal-brand small { display: block; margin-top: 9px; font: 10px/1.4 system-ui, sans-serif; letter-spacing: .2em; color: var(--journal-muted); }
 .journal-nav-links { gap: 2px; margin-left: auto; }
 .journal-nav-links a { font-size: 13px; font-weight: 400; padding-inline: 11px; }
@@ -128,7 +128,7 @@ body.journal-site { color: var(--journal-ink); background: var(--page-bg); font-
   .journal-navbar-inner { gap: 12px; }
   .journal-nav-links a { padding-inline: 7px; font-size: 12px; }
   .journal-brand { font-size: 27px; gap: 10px; }
-  .journal-brand-mark { font-size: 35px; }
+  .journal-brand-avatar { width: 36px; height: 36px; }
 }
 @media (max-width: 767px) {
   .journal-header, .journal-shell { width: calc(100% - 40px); }
