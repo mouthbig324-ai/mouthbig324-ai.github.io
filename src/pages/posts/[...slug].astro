@@ -100,7 +100,7 @@ const jsonLd = {
             }
 
 
-            {headings.length > 0 && <details class="journal-inline-toc"><summary>本篇目录</summary><nav aria-label="本篇目录">{headings.filter(h => h.depth <= Math.min(...headings.map(item => item.depth)) + 1).map(h => <a href={"#" + h.slug}>{h.text}</a>)}</nav></details>}
+            {headings.length > 0 && <details class="journal-inline-toc"><summary>本篇目录</summary><nav aria-label="本篇目录">{headings.filter(h => h.depth <= Math.min(...headings.map(item => item.depth)) + 1).map(h => <a href={"#" + h.slug}>{h.text.replace(/\s*#$/, "").trimEnd()}</a>)}</nav></details>}
             <Markdown class="mb-6 markdown-content onload-animation">
                 <Content />
             </Markdown>

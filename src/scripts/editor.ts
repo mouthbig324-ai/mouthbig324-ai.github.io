@@ -5,6 +5,7 @@ import { emojiPicker } from "./emoji-picker";
 import { RecordComposer } from "./record-composer";
 import { unplacedMedia } from "../utils/inline-media-utils";
 import { publicMediaUrl } from "../utils/media-utils";
+import { normalizePostCategory } from "../utils/post-category.mjs";
 type Photo = { src: string; thumbnail?: string; alt: string; width: number; height: number };
 type Video = { src: string; caption: string };
 type Friend = { name: string; url: string; description: string; note?: string };
@@ -31,6 +32,13 @@ const recordComposer = new RecordComposer($<HTMLTextAreaElement>("record-body"),
   photoChanged(src, alt) { for (const photo of photoItems) if (photo.src === src) photo.alt = alt; recordComposer.updatePhotoAlt(src, alt); renderMedia(); },
   photoRemoved(src) { if (!recordComposer.hasPhoto(src)) { photoItems = photoItems.filter(photo => photo.src !== src); if (cover === src) cover = ""; } renderMedia(); },
 });
+for (const button of document.querySelectorAll<HTMLButtonElement>("[data-heading-level]")) {
+  button.addEventListener("mousedown", event => event.preventDefault());
+  button.addEventListener("click", () => {
+    const level = Number(button.dataset.headingLevel);
+    if (level === 0 || level === 2 || level === 3) status("heading-status", recordComposer.formatHeading(level));
+  });
+}
 function status(target: string, message: string, error = false) { const element = $(target); element.replaceChildren(); element.textContent = message; element.classList.toggle("error", error); }
 async function request(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers); if (token) headers.set("Authorization", `Bearer ${token}`);
@@ -85,7 +93,7 @@ async function openRecord(key: string) {
   try {
   const data = await request(`/admin/record?kind=${mode}&id=${encodeURIComponent(key)}`); reset(); id = data.id; sha = data.sha;
   const meta = data.meta; input("record-title").value = meta.title || ""; input("record-date").value = String(mode === "album" ? meta.date : meta.published).slice(0, 10); $<HTMLTextAreaElement>("description").value = meta.description || "";
-  $<HTMLTextAreaElement>("record-body").value = data.body || ""; $<HTMLSelectElement>("category").value = meta.category || ""; input("featured").checked = !!meta.featured;
+  $<HTMLTextAreaElement>("record-body").value = data.body || ""; $<HTMLSelectElement>("category").value = normalizePostCategory(meta.category); input("featured").checked = !!meta.featured;
   input("tags").value = (meta.tags || []).join("、"); photoItems = meta.photos || []; videoItems = meta.videos || []; cover = meta.image || ""; recordComposer.setBody(data.body || "", photoItems); renderMedia();
   for (const field of ["series", "tripDate", "location", "seriesOrder"]) input(field).value = String(meta[field] ?? "");
   draftRecovery.begin();
@@ -217,7 +225,7 @@ const draftRecovery = setupDraftRecovery({
     mode = record.kind; id = record.id; sha = record.sha;
     input("record-title").value = record.title; input("record-date").value = record.date;
     $<HTMLTextAreaElement>("description").value = record.description;
-    $<HTMLSelectElement>("category").value = record.category;
+    $<HTMLSelectElement>("category").value = normalizePostCategory(record.category);
     input("tags").value = record.tags.join("、"); input("featured").checked = record.featured;
     for (const field of ["series", "tripDate", "location", "seriesOrder"] as const) input(field).value = String(record[field] ?? "");
     cover = record.image; photoItems = record.photos; videoItems = record.videos || [];

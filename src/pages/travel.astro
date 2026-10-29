@@ -12,8 +12,8 @@ const posts = (await getSortedPosts()).filter(post => post.data.category === "�
 ---
 <MainGridLayout title="旅行日记" description="用照片与文字，记下沿途的风景。">
   <JournalHeader title="旅行日记" description="走过的路、看过的风景，都在这里留一页。" />
-  <div class="flex items-center justify-between gap-4 mb-4 px-2"><h2 class="text-xl font-bold text-90">按旅程回看</h2><a href={url("/series/")} class="text-[var(--primary)]">全部旅行系列 →</a></div>
-  <TravelSeriesCards series={series} />
+  {series.length > 0 && <><div class="flex items-center justify-between gap-4 mb-4 px-2"><h2 class="text-xl font-bold text-90">按旅程回看</h2><a href={url("/series/")} class="text-[var(--primary)]">全部旅行系列 →</a></div>
+  <TravelSeriesCards series={series} /></>}
   <h2 class="text-xl font-bold text-90 px-2 mb-4">旅行日记</h2>
   <div class="flex flex-col gap-4">
     {posts.map(entry => <PostCard entry={entry} {...entry.data} url={getPostUrlBySlug(entry.slug)} style="" />)}

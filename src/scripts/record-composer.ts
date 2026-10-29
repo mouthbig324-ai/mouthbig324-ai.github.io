@@ -1,6 +1,7 @@
 import MarkdownIt from "markdown-it";
 import { normalizeJournalText } from "../utils/journal-text";
 import { publicMediaUrl } from "../utils/media-utils";
+import { applyJournalHeading, type HeadingLevel } from "../utils/journal-heading";
 
 export type ComposerPhoto = { src: string; alt: string; width: number; height: number; thumbnail?: string; title?: string };
 type TextBlock = { id: string; kind: "text"; text: string };
@@ -61,6 +62,23 @@ export class RecordComposer {
     this.sync(); this.render(); this.focusCursor();
   }
 
+  formatHeading(level: HeadingLevel) {
+    if (this.disabled) return "请等待当前操作完成。";
+    const block = this.blocks.find(block => block.kind === "text" && block.id === this.cursor.id);
+    if (!block || block.kind !== "text") return "请先点进想设置标题的文字行。";
+    const result = applyJournalHeading(block.text, this.cursor.start, this.cursor.end, level);
+    if (!result.changed) return result.message;
+    block.text = result.text;
+    this.cursor = { id: block.id, start: result.start, end: result.end };
+    this.sync();
+    const control = this.host.querySelector<HTMLTextAreaElement>(`[data-block-id="${block.id}"] textarea`);
+    if (control) {
+      control.value = block.text; this.focusCursor();
+      control.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    return result.message;
+  }
+
   hasPhoto(src: string) { return this.blocks.some(block => block.kind === "photo" && block.photo.src === src); }
 
   updatePhotoAlt(src: string, alt: string) {
@@ -85,7 +103,11 @@ export class RecordComposer {
   focusCursor() {
     if (this.disabled) return;
     const control = this.host.querySelector<HTMLTextAreaElement>(`[data-block-id="${this.cursor.id}"] textarea`);
-    if (control) { control.focus({ preventScroll: true }); control.setSelectionRange(this.cursor.start, this.cursor.end); }
+    if (control) {
+      const cursor = { ...this.cursor };
+      control.focus({ preventScroll: true }); control.setSelectionRange(cursor.start, cursor.end);
+      this.cursor = cursor;
+    }
   }
 
   private sync() {

@@ -185,22 +185,23 @@ test("invalid travel dates, series lengths and order numbers cannot be published
   }
   assert.equal(writes.length, before);
 });
-test("daily and uncategorized records retain their category through saving and editing", async () => {
+test("legacy daily records merge into moments and uncategorized records stay empty", async () => {
   for (const [index, category] of ["日常", ""].entries()) {
     const id = `test-category-${index}`;
+    const expected = category === "日常" ? "生活碎片" : category;
     const first = await call("/admin/record", { auth: true, data: post({ id, category }) });
     assert.equal(first.status, 200);
-    assert.equal(parsePost(files.get(`src/content/posts/${id}.md`).raw).meta.category, category);
+    assert.equal(parsePost(files.get(`src/content/posts/${id}.md`).raw).meta.category, expected);
     const reopenedResponse = await call(`/admin/record?kind=post&id=${id}`, { auth: true });
     assert.equal(reopenedResponse.status, 200);
     const reopened = await reopenedResponse.json();
-    assert.equal(reopened.meta.category, category);
+    assert.equal(reopened.meta.category, expected);
     const edited = await call("/admin/record", { auth: true, data: post({ id, sha: reopened.sha, category: reopened.meta.category, body: reopened.body + "\nEdited record.", draft: false }) });
     assert.equal(edited.status, 200);
     const finalResponse = await call(`/admin/record?kind=post&id=${id}`, { auth: true });
     assert.equal(finalResponse.status, 200);
     const final = await finalResponse.json();
-    assert.equal(final.meta.category, category);
+    assert.equal(final.meta.category, expected);
     assert.equal(final.meta.draft, false);
     assert.equal(final.body, reopened.body + "\nEdited record.");
   }
@@ -291,4 +292,13 @@ test("media size and storage limits refuse uploads before anything is written", 
   await db.prepare("UPDATE storage_budget SET used_bytes=8000000000 WHERE id=1").run();
   assert.equal((await call("/admin/media", { auth: true, method: "POST", headers: { "Content-Type": "video/mp4", "Content-Length": "4" }, body: "test" })).status, 507);
   assert.equal((await bucket.list()).objects.length, before);
+});
+
+
+test("publishing canonicalizes old daily categories and preserves empty categories", () => {
+  for (const [input, expected] of [["日常", "生活碎片"], ["生活碎片", "生活碎片"], ["旅行日记", "旅行日记"], ["", ""], ["无", ""]]) {
+    const saved = parsePost(postContent(post({ category: input, body: "## 小标题\n\n原文。" })));
+    assert.equal(saved.meta.category, expected);
+    assert.equal(saved.body.trim(), "## 小标题\n\n原文。");
+  }
 });

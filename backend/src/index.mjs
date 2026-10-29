@@ -1,4 +1,5 @@
 import { parse as parseYaml } from "yaml";
+import { normalizePostCategory } from "../../src/utils/post-category.mjs";
 
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const fail = (status, message) => { throw new HttpError(status, message); };
@@ -71,7 +72,8 @@ function travelFields(data) {
 }
 export function postContent(data) {
   const title = text(data.title, 160, "标题", true); const published = date(data.date);
-  const category = data.category === "" || data.category === "无" ? "" : ["生活碎片", "旅行日记", "日常"].includes(data.category) ? data.category : "生活碎片";
+  const normalizedCategory = normalizePostCategory(typeof data.category === "string" ? data.category : "生活碎片");
+  const category = ["", "生活碎片", "旅行日记"].includes(normalizedCategory) ? normalizedCategory : "生活碎片";
   const tags = Array.isArray(data.tags) ? data.tags.slice(0, 20).map(tag => text(tag, 40, "标签", true)) : [];
   const meta = { title, published, ...travelFields(data), updated: new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date()), description: text(data.description || "", 500, "摘要"), image: data.image ? source(data.image) : "", tags, category, draft: data.draft === true, featured: data.featured === true, photos: photos(data.photos || []), videos: videos(data.videos || []), lang: "zh_CN" };
   return "---\n" + Object.entries(meta).map(([key, value]) => `${key}: ${key === "published" || key === "updated" ? value : JSON.stringify(value)}`).join("\n") + "\n---\n\n" + text(data.body || "", 200000, "正文") + "\n";

@@ -1,4 +1,5 @@
 import { defineCollection, z } from "astro:content";
+import { normalizePostCategory } from "../utils/post-category.mjs";
 
 const postsCollection = defineCollection({
 	schema: z.object({
@@ -9,7 +10,7 @@ const postsCollection = defineCollection({
 		description: z.string().optional().default(""),
 		image: z.string().optional().default(""),
 		tags: z.array(z.string()).optional().default([]),
-		category: z.string().optional().nullable().default(""),
+		category: z.string().optional().nullable().default("").transform(normalizePostCategory),
 		lang: z.string().optional().default(""),
 		series: z.string().max(80).default(""),
 		tripDate: z.string().default(""),
