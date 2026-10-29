@@ -16,16 +16,12 @@ const input = (id: string) => $<HTMLInputElement>(id);
 const value = (id: string) => ($<HTMLInputElement | HTMLTextAreaElement>(id)).value;
 const today = () => new Intl.DateTimeFormat("sv-SE", { timeZone: "Asia/Shanghai" }).format(new Date());
 const tokenKey = "zuige-owner-access";
-function readEntry() {
-  const incoming = new URLSearchParams(location.hash.slice(1)).get("access");
-  if (!incoming || !/^[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(incoming) || incoming.length >= 2000) return null;
-  localStorage.setItem(tokenKey, incoming);
-  history.replaceState(null, "", location.pathname + location.search);
-  return incoming;
-}
-readEntry();
-sessionStorage.removeItem("zuige-admin-session");
-let token = localStorage.getItem(tokenKey) || "";
+// Retired private links must never install a session or remain in the address bar.
+function clearPrivateEntry() { if (new URLSearchParams(location.hash.slice(1)).has("access")) history.replaceState(null, "", location.pathname + location.search); }
+clearPrivateEntry();
+let token = "";
+try { sessionStorage.removeItem("zuige-admin-session"); token = localStorage.getItem(tokenKey) || ""; } catch { /* In-memory login still works when browser storage is unavailable. */ }
+function forgetSession() { token = ""; try { localStorage.removeItem(tokenKey); } catch { /* Session already cleared in memory. */ } }
 let mode = "post"; let id = ""; let sha = ""; let cover = ""; let photoItems: Photo[] = []; let videoItems: Video[] = [];
 let friendItems: Friend[] = []; let friendSha = ""; let busy = false; let storageReady = false;
 const recordComposer = new RecordComposer($<HTMLTextAreaElement>("record-body"), $("body-editor"), {
@@ -43,7 +39,7 @@ function status(target: string, message: string, error = false) { const element 
 async function request(path: string, options: RequestInit = {}) {
   const headers = new Headers(options.headers); if (token) headers.set("Authorization", `Bearer ${token}`);
   const response = await fetch(api + path, { ...options, headers }); const data = await response.json();
-  if (response.status === 401) { token = ""; localStorage.removeItem(tokenKey); showLogin(); }
+  if (response.status === 401) { forgetSession(); showLogin(); }
   if (!response.ok) throw Object.assign(new Error(data.error || "操作未完成，请稍后再试。"), { status: response.status }); return data;
 }
 const send = (path: string, data: unknown) => request(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
@@ -57,7 +53,20 @@ async function showEditor() {
   $("login-panel").hidden = true; $("editor-panel").hidden = false; $("logout").hidden = false;
   await selectMode("post");
 }
-$("logout").addEventListener("click", () => { if (busy || !draftRecovery.leave()) return; draftRecovery.suspend(); token = ""; localStorage.removeItem(tokenKey); showLogin(); });
+$("logout").addEventListener("click", () => { if (busy || !draftRecovery.leave()) return; draftRecovery.suspend(); forgetSession(); showLogin(); status("login-status", "已退出管理。"); });
+$("login-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const button = $<HTMLButtonElement>("login-submit"); if (button.disabled) return;
+  button.disabled = true; input("login-password").disabled = true; status("login-status", "正在登录…");
+  try {
+    if (!api) throw new Error("管理服务尚未连接。");
+    const session = await send("/admin/login", { password: value("login-password") });
+    input("login-password").value = ""; token = session.token;
+    try { localStorage.setItem(tokenKey, token); } catch { /* Keep this session in memory only. */ }
+    await showEditor(); status("login-status", "");
+  } catch (error) { status("login-status", message(error), true); }
+  finally { input("login-password").value = ""; input("login-password").disabled = false; button.disabled = false; }
+});
 const message = (error: unknown) => error instanceof Error ? error.message : "操作未完成，请稍后再试。";
 for (const button of document.querySelectorAll<HTMLButtonElement>("[data-mode]")) button.addEventListener("click", () => { selectMode(button.dataset.mode!).catch(error => status("save-status", message(error), true)); });
 async function selectMode(next: string) {
@@ -70,6 +79,7 @@ async function selectMode(next: string) {
   if (mode === "friends") return await loadFriends(); if (mode === "comments") return await loadComments();
   for (const element of document.querySelectorAll<HTMLElement>(".post-only")) element.hidden = mode === "album";
   $("title-label").textContent = mode === "album" ? "相册名称" : "标题"; $("description-label").textContent = mode === "album" ? "相册简介" : "简短介绍";
+  $<HTMLDetailsElement>("media-panel").open = mode === "album";
   $("new-record").textContent = mode === "album" ? "＋ 新建相册" : "＋ 新建记录";
   $("media-note").textContent = storageReady ? (mode === "album" ? "照片按原图上传，不压缩、不改动设备上的原件。每张最多64 MB。" : "照片上传后插在正文光标位置，原图不压缩。下方列表用于管理附件；视频显示在正文后。每个文件最多64 MB。") : mode === "album" ? "云存储尚未开通，暂时不能上传照片。" : "附件上传尚未开通。可以先写文字，或添加已有的视频直链。";
   reset(); await loadRecords();
@@ -102,9 +112,10 @@ async function openRecord(key: string) {
 }
 function renderMedia() {
   const list = $("media-list"); list.replaceChildren();
+  $("media-count").textContent = `附件 · ${photoItems.length} 张照片${videoItems.length ? `、${videoItems.length} 个视频` : ""} · 展开管理`;
   photoItems.forEach((photo, index) => {
     const card = document.createElement("div"); card.className = "media-item";
-    const image = document.createElement("img"); image.src = publicMediaUrl(photo.thumbnail || photo.src); image.alt = photo.alt;
+    const image = document.createElement("img"); image.loading = "lazy"; image.src = publicMediaUrl(photo.thumbnail || photo.src); image.alt = photo.alt;
     const caption = document.createElement("input"); caption.placeholder = "照片说明（可选）"; caption.value = photo.alt; caption.maxLength = 300; caption.disabled = busy; caption.addEventListener("input", () => { photo.alt = caption.value; recordComposer.updatePhotoAlt(photo.src, caption.value); });
     const controls = document.createElement("div"); controls.className = "media-controls";
     if (mode === "post") { const insert = document.createElement("button"); insert.type = "button"; insert.textContent = recordComposer.hasPhoto(photo.src) ? "再次插入正文" : "插入正文"; insert.disabled = busy; insert.addEventListener("click", () => { recordComposer.insertPhoto(photo); renderMedia(); }); controls.append(insert); }
@@ -234,8 +245,4 @@ const draftRecovery = setupDraftRecovery({
 });
 if (!api) { status("login-status", "管理服务还未连接。完成账户接入后，即可开始记录。"); }
 else if (token) showEditor().catch(error => { showLogin(); status("login-status", message(error), true); });
-window.addEventListener("hashchange", () => {
-  const incoming = readEntry(); if (!incoming || !api) return;
-  token = incoming; status("login-status", "正在打开记录管理…");
-  showEditor().catch(error => { showLogin(); status("login-status", message(error), true); });
-});
+window.addEventListener("hashchange", clearPrivateEntry);

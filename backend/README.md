@@ -14,7 +14,7 @@
 4. 使用 `npx wrangler d1 create zuige-blog-data` 创建数据库，把返回的数据库 ID 加入 `wrangler.jsonc` 的 `d1_databases`，绑定名为 `DB`，数据库名为 `zuige-blog-data`，迁移目录为 `migrations`。
 5. 使用 `npx wrangler r2 bucket create zuige-blog-media` 创建存储桶，在 `r2_buckets` 增加绑定名 `BUCKET`、存储桶名 `zuige-blog-media`。存储桶无需开启 r2.dev 公开访问，公开媒体由本服务提供。
 6. 使用 `npx wrangler d1 migrations apply zuige-blog-data --remote` 应用数据库结构。这是新建数据库的初始化，不会填入示例评论或旅行记录。
-7. 配置下面的两个 secrets，再运行 `npm run deploy`。将返回的 HTTPS 服务地址写入博客的 `src/data/services.json` 的 `apiBase`，提交到 GitHub，等待 Pages 发布。用 `SESSION_SECRET` 签发站主的专用免密码入口；入口文件保存在公开仓库之外。
+7. 配置下面的三个 secrets，再运行 `npm run deploy`。将返回的 HTTPS 服务地址写入博客的 `src/data/services.json` 的 `apiBase`，提交到 GitHub，等待 Pages 发布。已有项目不要重建数据库、存储桶或覆盖既有的 `GITHUB_TOKEN`、`SESSION_SECRET`。
 
 配置示例（数据库 ID 要替换成实际值）：
 
@@ -26,19 +26,20 @@
 ## 凭据
 
 - `GITHUB_TOKEN`：GitHub fine-grained personal access token。只选择 `mouthbig324-ai.github.io` 这个仓库，给予 **Contents: Read and write**；不需要其他仓库、管理权限或 workflow 写权限。发布功能只写文章、相册和友链文件。令牌过期后需更新。
-- `SESSION_SECRET`：至少 32 字节的独立随机值，用于签发专用免密码入口和保护留言限流标识。更换它会让所有旧的管理入口和设备授权失效。
+- `SESSION_SECRET`：至少 32 字节的独立随机值，用于签发登录会话和保护限流、浏览去重标识。沿用现有值，不因切换密码登录而更换。
+- `ADMIN_PASSWORD_HASH`：密码的 PBKDF2-SHA256 加盐校验值，格式为 `pbkdf2-sha256:100000:base64url盐:base64url校验值`。使用密码的 UTF-8 字节、随机至少 16 字节盐和 32 字节派生值，不裁剪密码空格。只通过 Cloudflare Secret 保存，不保存明文密码，不放进前端、仓库或日志。
 
-用 `npx wrangler secret put 凭据名` 的本地交互输入配置，不把原值写入代码、文档、公开仓库或聊天。GitHub 的电脑登录凭据不能直接当作第三方服务的仓库令牌。网站不再要求输入管理密码，旧的 `ADMIN_PASSWORD_HASH` 不再使用。
+用 `npx wrangler secret put 凭据名` 的本地交互输入或标准输入配置，不把原值写入代码、文档、公开仓库或聊天。GitHub 的电脑登录凭据不能直接当作第三方服务的仓库令牌。
 
-站主授权格式为 HMAC-SHA256 签名的 `base64url(payload).base64url(signature)`，payload 包含 `role: owner` 和毫秒时间戳 `expires`。专用链接在 `/admin/#access=授权值` 中携带凭据，URL 片段不会发给 GitHub Pages；网页读取后从地址栏移除并在当前设备保存。匿名访客无法得到这个授权值，也不能发布、查看留言邮箱或管理文章。
+2026-10-29 起使用密码登录：`POST /admin/login` 经 HTTPS 接收密码，只在 Worker 内校验。单一来源每十分钟最多尝试 8 次，限流标识经过 HMAC，不存原始 IP。成功返回有效期 7 天的签名会话，响应不缓存。浏览器保存会话，不保存密码；无法写本地存储时仅在当前页面保留会话。
 
-专用入口文件由站主私下保存，不提交到仓库、不发给访客，也不放在公开友链中。本次入口有效期一年；退出管理会清除当前设备的权限，再次使用专用入口即可进入。需要撤销入口时，更换 `SESSION_SECRET` 并签发新入口。
+会话包含 `role`、`expires`、随机 `nonce` 和与当前密码校验值绑定的 `credential`，由现有 `SESSION_SECRET` 做 HMAC-SHA256 签名。旧免密码链接不再通过校验，网页也不再接受链接片段授权。更新 `ADMIN_PASSWORD_HASH` 会使旧会话失效，无须更换签名密钥。退出清除当前浏览器的会话，不删除本机暂存。
 
 服务使用 SHA 检查阻止旧编辑器覆盖较新的文章。发布会触发现有 GitHub Actions，文章显示需要等待构建；“提交发布成功”并不等于 Pages 构建已完成。
 
 ## 使用与限制
 
-用私下保存的免密码入口打开后台，可以新建旅行日记、生活碎片或相册，上传照片、预览、保存草稿、发布，管理友链和回复、隐藏留言。第一次打开后，原设备可以直接打开 `/admin/`；新设备需要通过专用入口授权。
+直接打开 `/admin/` 输入管理密码，可以新建旅行日记、生活碎片或相册，上传照片、预览、保存草稿、发布，管理友链和回复、隐藏留言。新设备及会话到期后需要重新输入密码。
 
 照片按原文件上传，不压缩、不生成缩略图、不移除原文件元数据；原件也保留在设备。支持 JPEG、PNG、WebP、AVIF，单张最多 64 MiB；HEIC/HEIF 请先在设备上导出为 JPEG。视频支持 MP4/WebM，每个最多 64 MiB，不自动转码。公开访问的媒体直链可以复用在多个记录中。
 

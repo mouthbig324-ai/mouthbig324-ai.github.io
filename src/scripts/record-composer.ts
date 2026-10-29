@@ -18,6 +18,8 @@ export class RecordComposer {
   private cursor = { id: "", start: 0, end: 0 };
   private disabled = false;
   private rendering = false;
+  private expandedText = new Set<string>();
+  private expandedCaptions = new Set<string>();
 
   constructor(private source: HTMLTextAreaElement, private host: HTMLElement, private callbacks: Callbacks) {
     this.setBody(source.value, []);
@@ -26,6 +28,7 @@ export class RecordComposer {
   setBody(body: string, photos: ComposerPhoto[]) {
     body = normalizeJournalText(body);
     this.blocks = [];
+    this.expandedText.clear(); this.expandedCaptions.clear();
     const lines = body.split("\n");
     const tokens = markdown.parse(body, {});
     let previous = 0;
@@ -57,6 +60,7 @@ export class RecordComposer {
     const start = Math.min(this.cursor.start, before.text.length);
     const after = textBlock(before.text.slice(start));
     before.text = before.text.slice(0, start);
+    this.expandedText.delete(before.id);
     this.blocks.splice(index, 1, before, { id: crypto.randomUUID(), kind: "photo", photo: { ...photo } }, after);
     this.cursor = { id: after.id, start: 0, end: 0 };
     this.sync(); this.render(); this.focusCursor();
@@ -85,7 +89,13 @@ export class RecordComposer {
     for (const block of this.blocks) if (block.kind === "photo" && block.photo.src === src) {
       block.photo.alt = alt;
       const control = this.host.querySelector<HTMLInputElement>(`[data-block-id="${block.id}"] input`);
-      if (control && control !== document.activeElement) control.value = alt;
+      if (control && control !== document.activeElement) {
+        control.value = alt; control.hidden = !alt && !this.expandedCaptions.has(block.id);
+        const toggle = control.parentElement?.querySelector<HTMLButtonElement>(".composer-caption-toggle");
+        if (toggle) toggle.hidden = !control.hidden;
+      }
+      const image = this.host.querySelector<HTMLImageElement>(`[data-block-id="${block.id}"] img`);
+      if (image) image.alt = alt || "正文照片";
     }
     this.sync();
   }
@@ -136,6 +146,16 @@ export class RecordComposer {
       const wrapper = document.createElement(block.kind === "photo" ? "figure" : "div");
       wrapper.className = `composer-${block.kind}`; wrapper.dataset.blockId = block.id;
       if (block.kind === "text") {
+        if (!block.text && index !== this.blocks.length - 1 && !this.expandedText.has(block.id)) {
+          wrapper.classList.add("composer-gap");
+          const insert = document.createElement("button"); insert.type = "button"; insert.className = "composer-insert-text";
+          insert.textContent = "＋ 在这里写文字"; insert.disabled = this.disabled;
+          insert.addEventListener("click", () => {
+            this.expandedText.add(block.id); this.cursor = { id: block.id, start: 0, end: 0 };
+            this.render(); this.focusCursor();
+          });
+          wrapper.append(insert); this.host.append(wrapper); return;
+        }
         const control = document.createElement("textarea"); control.value = block.text; control.rows = 4; control.disabled = this.disabled;
         control.placeholder = index === 0 ? "写下这一段文字，点上方按钮插入照片…" : "接着写下一段文字…";
         control.setAttribute("aria-label", `第 ${index + 1} 段文字`);
@@ -147,19 +167,30 @@ export class RecordComposer {
       } else {
         const image = document.createElement("img"); image.src = publicMediaUrl(block.photo.src); image.alt = block.photo.alt || "正文照片"; if (block.photo.title) image.title = block.photo.title;
         const caption = document.createElement("input"); caption.value = block.photo.alt; caption.maxLength = 300; caption.placeholder = "照片说明（可选）"; caption.setAttribute("aria-label", "正文照片说明"); caption.disabled = this.disabled;
+        caption.hidden = !block.photo.alt && !this.expandedCaptions.has(block.id);
+        const captionToggle = document.createElement("button"); captionToggle.type = "button"; captionToggle.className = "composer-caption-toggle";
+        captionToggle.textContent = "＋ 添加说明"; captionToggle.hidden = !caption.hidden; captionToggle.disabled = this.disabled;
+        captionToggle.addEventListener("click", () => { this.expandedCaptions.add(block.id); caption.hidden = false; captionToggle.hidden = true; caption.focus(); });
+        caption.addEventListener("blur", () => { if (!caption.value) { this.expandedCaptions.delete(block.id); caption.hidden = true; captionToggle.hidden = false; } });
         caption.addEventListener("input", () => { block.photo.alt = caption.value; image.alt = caption.value; this.sync(); this.callbacks.photoChanged(block.photo.src, caption.value); });
         const actions = document.createElement("div"); actions.className = "composer-photo-actions";
         for (const [label, direction] of [["上移", -1], ["下移", 1]] as const) {
           const button = document.createElement("button"); button.type = "button"; button.textContent = label; button.disabled = this.disabled;
           button.addEventListener("click", () => {
-            const target = index + direction; if (target < 0 || target >= this.blocks.length) return;
+            let target = index + direction;
+            while (target >= 0 && target < this.blocks.length) {
+              const candidate = this.blocks[target];
+              if (candidate.kind !== "text" || candidate.text) break;
+              target += direction;
+            }
+            if (target < 0 || target >= this.blocks.length) return;
             [this.blocks[index], this.blocks[target]] = [this.blocks[target], this.blocks[index]];
             this.mergeText(); this.sync(); this.render();
           }); actions.append(button);
         }
         const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "移除图片"; remove.disabled = this.disabled;
         remove.addEventListener("click", () => { this.blocks.splice(index, 1); this.mergeText(); this.sync(); this.render(); this.callbacks.photoRemoved(block.photo.src); });
-        actions.append(remove); wrapper.append(image, caption, actions);
+        actions.append(remove); wrapper.append(image, caption, captionToggle, actions);
       }
       this.host.append(wrapper);
     });

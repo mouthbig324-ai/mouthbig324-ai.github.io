@@ -1,13 +1,17 @@
 import assert from "node:assert/strict";
 import { before, after, test } from "node:test";
 import { readFileSync } from "node:fs";
-import { createHmac } from "node:crypto";
+import { createHmac, pbkdf2Sync } from "node:crypto";
 import { build } from "esbuild";
 import { Miniflare, Log, LogLevel, convertV4MiniflareOptions } from "miniflare";
 import service, { postContent, parsePost } from "../src/index.mjs";
 
 const origin = "https://mouthbig324-ai.github.io";
 const secret = "only-a-local-test-session-secret-1234567890";
+const password = "local-test-password-not-a-real-credential";
+const salt = Buffer.from("local-test-salt-only");
+const passwordHash = `pbkdf2-sha256:100000:${salt.toString("base64url")}:${pbkdf2Sync(password, salt, 100000, 32, "sha256").toString("base64url")}`;
+const credential = createHmac("sha256", secret).update("password-session:" + passwordHash).digest("base64url");
 const files = new Map(); const writes = []; let counter = 1;
 let worker; let db; let bucket; let token;
 const encode = content => Buffer.from(content).toString("base64");
@@ -40,13 +44,13 @@ before(async () => {
   files.set("src/content/posts/hello.md", { sha: "original-hello", raw: postContent(post({ title: "小站的第一天", date: "2026-10-13", draft: false })) });
   files.set("src/data/friends.json", { sha: "original-friends", raw: "[]" });
   const bundled = await build({ entryPoints: [new URL("../src/index.mjs", import.meta.url).pathname.replace(/^\/([A-Z]:)/, "$1")], bundle: true, format: "esm", platform: "browser", write: false, logLevel: "silent" });
-  worker = new Miniflare(convertV4MiniflareOptions({ log: new Log(LogLevel.ERROR), workers: [{ modules: true, script: bundled.outputFiles[0].text, compatibilityDate: "2026-08-01", d1Databases: ["DB"], r2Buckets: ["BUCKET"], outboundService: fakeNetwork, bindings: { BLOG_ORIGIN: origin, GITHUB_OWNER: "mouthbig324-ai", GITHUB_REPO: "mouthbig324-ai.github.io", GITHUB_TOKEN: "only-a-test-token", SESSION_SECRET: secret, MAX_STORAGE_BYTES: "8000000000" } }] }));
+  worker = new Miniflare(convertV4MiniflareOptions({ log: new Log(LogLevel.ERROR), workers: [{ modules: true, script: bundled.outputFiles[0].text, compatibilityDate: "2026-08-01", d1Databases: ["DB"], r2Buckets: ["BUCKET"], outboundService: fakeNetwork, bindings: { BLOG_ORIGIN: origin, GITHUB_OWNER: "mouthbig324-ai", GITHUB_REPO: "mouthbig324-ai.github.io", GITHUB_TOKEN: "only-a-test-token", SESSION_SECRET: secret, ADMIN_PASSWORD_HASH: passwordHash, MAX_STORAGE_BYTES: "8000000000" } }] }));
   db = await worker.getD1Database("DB"); bucket = await worker.getR2Bucket("BUCKET");
   for (const file of ["0001_initial.sql", "0002_record_index.sql", "0003_article_views.sql"]) {
     const sql = readFileSync(new URL("../migrations/" + file, import.meta.url), "utf8");
     for (const statement of sql.split(";").filter(value => value.trim())) await db.prepare(statement).run();
   }
-  const payload = Buffer.from(JSON.stringify({ role: "owner", expires: Date.now() + 3600000 })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ role: "owner", expires: Date.now() + 3600000, credential })).toString("base64url");
   token = payload + "." + createHmac("sha256", secret).update(payload).digest("base64url");
 });
 after(async () => { await worker?.dispose(); });
@@ -61,17 +65,42 @@ test("visitor cannot use the publishing or upload endpoints", async () => {
 test("tampered and expired owner sessions fail", async () => {
   assert.equal((await call("/admin/status", { headers: { Authorization: `Bearer ${token}wrong` } })).status, 401);
   assert.equal((await call("/admin/status", { headers: { Authorization: `Bearer ${token}.extra` } })).status, 401);
-  const payload = Buffer.from(JSON.stringify({ role: "owner", expires: Date.now() - 1000 })).toString("base64url");
+  const payload = Buffer.from(JSON.stringify({ role: "owner", expires: Date.now() - 1000, credential })).toString("base64url");
   const expired = payload + "." + createHmac("sha256", secret).update(payload).digest("base64url");
   assert.equal((await call("/admin/status", { headers: { Authorization: `Bearer ${expired}` } })).status, 401);
 });
-test("a private owner link can manage the site without a password endpoint", async () => {
+test("retired private links cannot authenticate; password sessions expire after seven days", async () => {
   const payload = Buffer.from(JSON.stringify({ role: "owner", expires: Date.now() + 365 * 24 * 3600000 })).toString("base64url");
   const access = payload + "." + createHmac("sha256", secret).update(payload).digest("base64url");
   const response = await call("/admin/status", { headers: { Authorization: `Bearer ${access}` } });
-  assert.equal(response.status, 200); assert.equal((await response.json()).publishing, true);
-  assert.equal((await (await call("/health")).json()).authMode, "private-link");
-  assert.equal((await call("/admin/login", { data: { password: "old-password" } })).status, 401);
+  assert.equal(response.status, 401);
+  assert.equal((await (await call("/health")).json()).authMode, "password");
+  const login = await call("/admin/login", { data: { password } });
+  assert.equal(login.status, 200); assert.equal(login.headers.get("Cache-Control"), "no-store");
+  const session = await login.json();
+  assert.ok(session.expires > Date.now() + 6.99 * 86400000 && session.expires <= Date.now() + 7 * 86400000);
+  assert.ok(!JSON.stringify(session).includes(password));
+  assert.equal((await call("/admin/status", { headers: { Authorization: `Bearer ${session.token}` } })).status, 200);
+  assert.equal((await call("/admin/login", { data: { password: password.toUpperCase() } })).status, 401);
+  const stale = Buffer.from(JSON.stringify({ role: "owner", expires: Date.now() + 3600000, credential: "previous-password" })).toString("base64url");
+  assert.equal((await call("/admin/status", { headers: { Authorization: `Bearer ${stale}.${createHmac("sha256", secret).update(stale).digest("base64url")}` } })).status, 401);
+});
+test("password attempts are limited and malformed or oversized credentials fail", async () => {
+  for (const value of [null, 12, "", "a".repeat(257)]) {
+    assert.equal((await call("/admin/login", { data: { password: value }, headers: { "CF-Connecting-IP": "192.0.2.70" } })).status, 401);
+  }
+  assert.equal((await call("/admin/login", { data: { password: "a".repeat(3000) }, headers: { "CF-Connecting-IP": "192.0.2.71" } })).status, 413);
+  for (let i = 0; i < 8; i++) assert.equal((await call("/admin/login", { data: { password: "wrong" }, headers: { "CF-Connecting-IP": "192.0.2.72" } })).status, 401);
+  assert.equal((await call("/admin/login", { data: { password }, headers: { "CF-Connecting-IP": "192.0.2.72" } })).status, 429);
+  assert.equal((await call("/admin/login", { data: { password }, headers: { "CF-Connecting-IP": "192.0.2.73" } })).status, 200);
+});
+test("missing credentials fail closed and a password change invalidates existing sessions", async () => {
+  const request = new Request("https://local-service.test/admin/status", { headers: { Authorization: `Bearer ${token}` } });
+  assert.equal((await service.fetch(request, { DB: {}, SESSION_SECRET: secret })).status, 503);
+  assert.equal((await service.fetch(request, { DB: {}, SESSION_SECRET: secret, ADMIN_PASSWORD_HASH: passwordHash + "changed" })).status, 401);
+  const health = await service.fetch(new Request("https://local-service.test/health"), { SESSION_SECRET: secret });
+  assert.equal((await health.json()).login, false);
+  assert.equal((await call("/admin/login", { method: "POST", body: "null", headers: { "Content-Type": "application/json", "CF-Connecting-IP": "192.0.2.74" } })).status, 401);
 });
 test("CORS allows the blog and rejects an unrelated origin", async () => {
   const allowed = await call("/health"); assert.equal(allowed.headers.get("Access-Control-Allow-Origin"), origin);
@@ -279,13 +308,13 @@ test("failed uploads release storage only after object cleanup succeeds", async 
       assert.fail("Unexpected database statement");
     } }; return query; } };
     const storage = { async put() { if (failure === "put") throw new Error("simulated upload failure"); stored = true; }, async delete() { if (failure === "index-and-cleanup") throw new Error("simulated cleanup failure"); stored = false; } };
-    const response = await service.fetch(new Request("https://local-service.test/admin/media", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "video/mp4", "Content-Length": "4" }, body: "test" }), { DB: database, BUCKET: storage, SESSION_SECRET: secret });
+    const response = await service.fetch(new Request("https://local-service.test/admin/media", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": "video/mp4", "Content-Length": "4" }, body: "test" }), { DB: database, BUCKET: storage, SESSION_SECRET: secret, ADMIN_PASSWORD_HASH: passwordHash });
     assert.equal(response.status, 500); assert.equal(used, failure === "index-and-cleanup" ? 4 : 0); assert.equal(stored, failure === "index-and-cleanup");
   }
 });
 test("media size and storage limits refuse uploads before anything is written", async () => {
   for (const type of ["image/jpeg", "video/mp4"]) {
-    const response = await service.fetch(new Request("https://local-service.test/admin/media", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": type, "Content-Length": String(64 * 1024 * 1024 + 1), "X-Media-Width": "1000", "X-Media-Height": "1000" }, body: "test" }), { DB: { prepare() { assert.fail("Oversized uploads must not reserve storage"); } }, BUCKET: { put() { assert.fail("Oversized uploads must not store an object"); } }, SESSION_SECRET: secret });
+    const response = await service.fetch(new Request("https://local-service.test/admin/media", { method: "POST", headers: { Authorization: `Bearer ${token}`, "Content-Type": type, "Content-Length": String(64 * 1024 * 1024 + 1), "X-Media-Width": "1000", "X-Media-Height": "1000" }, body: "test" }), { DB: { prepare() { assert.fail("Oversized uploads must not reserve storage"); } }, BUCKET: { put() { assert.fail("Oversized uploads must not store an object"); } }, SESSION_SECRET: secret, ADMIN_PASSWORD_HASH: passwordHash });
     assert.equal(response.status, 413); assert.match((await response.json()).error, /64 MB/);
   }
   const before = (await bucket.list()).objects.length;

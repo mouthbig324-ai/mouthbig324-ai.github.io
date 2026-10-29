@@ -13,14 +13,29 @@ async function sign(value, secret) { const key = await crypto.subtle.importKey("
 function same(a, b) { if (a.length !== b.length) return false; let diff = 0; for (let index = 0; index < a.length; index++) diff |= a[index] ^ b[index]; return diff === 0; }
 function configured(env) { if (!env.DB) fail(503, "服务尚未完成连接。"); }
 async function owner(request, env) {
-  if (!env.SESSION_SECRET) fail(503, "管理入口尚未完成设置。");
+  if (!env.SESSION_SECRET || !env.ADMIN_PASSWORD_HASH) fail(503, "密码登录尚未完成设置。");
   const value = request.headers.get("Authorization")?.replace(/^Bearer /, "") || "";
   try {
     const [payload, signature, extra] = value.split(".");
-    if (!payload || !signature || extra !== undefined || !same(await sign(payload, env.SESSION_SECRET), unbase64(signature))) fail(401, "请使用自己的专用管理入口。");
+    if (!payload || !signature || extra !== undefined || !same(await sign(payload, env.SESSION_SECRET), unbase64(signature))) fail(401, "请先输入密码登录。");
     const data = JSON.parse(new TextDecoder().decode(unbase64(payload)));
-    if (data.role !== "owner" || !Number.isFinite(data.expires) || data.expires < Date.now()) fail(401, "管理入口已过期，请更新专用入口。");
-  } catch (error) { if (error instanceof HttpError) throw error; fail(401, "请使用自己的专用管理入口。"); }
+    if (data.role !== "owner" || !Number.isFinite(data.expires) || data.expires <= Date.now() || data.expires > Date.now() + 7 * 86400000 || data.credential !== await passwordCredential(env)) fail(401, "登录已失效，请重新输入密码。");
+  } catch (error) { if (error instanceof HttpError) throw error; fail(401, "请先输入密码登录。"); }
+}
+const passwordCredential = async env => b64url(await sign("password-session:" + env.ADMIN_PASSWORD_HASH, env.SESSION_SECRET));
+async function passwordLogin(request, env) {
+  if (!env.SESSION_SECRET || !env.ADMIN_PASSWORD_HASH) fail(503, "密码登录尚未完成设置。");
+  await rateLimit(request, env, "password-login", 8, 600);
+  const data = await bodyJson(request, 2048);
+  if (!data || typeof data.password !== "string" || !data.password || data.password.length > 256) fail(401, "密码不正确，请重试。");
+  const [algorithm, iterations, salt, expected, extra] = env.ADMIN_PASSWORD_HASH.split(":");
+  if (algorithm !== "pbkdf2-sha256" || iterations !== "100000" || !salt || !expected || extra !== undefined) fail(503, "密码登录配置异常。");
+  const key = await crypto.subtle.importKey("raw", encoder.encode(data.password), "PBKDF2", false, ["deriveBits"]);
+  const actual = new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: unbase64(salt), iterations: Number(iterations) }, key, 256));
+  if (!same(actual, unbase64(expected))) fail(401, "密码不正确，请重试。");
+  const expires = Date.now() + 7 * 86400000;
+  const payload = b64url(encoder.encode(JSON.stringify({ role: "owner", expires, credential: await passwordCredential(env), nonce: crypto.randomUUID() })));
+  return json({ token: payload + "." + b64url(await sign(payload, env.SESSION_SECRET)), expires });
 }
 async function bodyJson(request, limit = 250000) {
   const reader = request.body?.getReader(); if (!reader) fail(400, "缺少内容。");
@@ -217,9 +232,10 @@ async function articleViews(request, env, url) {
 }
 async function route(request, env) {
   const url = new URL(request.url); const path = url.pathname;
-  if (path === "/health") return json({ ok: true, comments: !!env.DB, storage: !!env.BUCKET, publishing: !!env.GITHUB_TOKEN, login: !!env.SESSION_SECRET, authMode: "private-link" });
+  if (path === "/health") return json({ ok: true, comments: !!env.DB, storage: !!env.BUCKET, publishing: !!env.GITHUB_TOKEN, login: !!env.SESSION_SECRET && !!env.ADMIN_PASSWORD_HASH, authMode: "password" });
   if (path.startsWith("/media/") && ["GET", "HEAD"].includes(request.method)) return serveMedia(request, env, url);
   configured(env);
+  if (path === "/admin/login" && request.method === "POST") return passwordLogin(request, env);
   if (path === "/views" && ["GET", "POST"].includes(request.method)) return articleViews(request, env, url);
   if (path === "/comments" && request.method === "GET") { const target = commentPath(url.searchParams.get("path")); const result = await env.DB.prepare("SELECT id, name, body, created, owner, parent_id FROM comments WHERE path = ? AND hidden = 0 ORDER BY created ASC LIMIT 300").bind(target).all(); return json({ comments: result.results }); }
   if (path === "/comments" && request.method === "POST") {
